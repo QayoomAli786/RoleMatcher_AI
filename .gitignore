@@ -1,0 +1,28 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+.venv/
+venv/
+
+# Data / DB (TF-IDF job chunks — generated at runtime)
+data/
+output/
+
+# Test / quality
+*.db
+.pytest_cache/
+.mypy_cache/
+coverage/
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
