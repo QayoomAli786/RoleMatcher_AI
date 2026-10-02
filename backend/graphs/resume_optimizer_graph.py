@@ -1153,11 +1153,6 @@ def _experience_from_text(resume_text: str) -> list[dict]:
     return out
 
 
-async def error_node(state: ResumeOptimizerState) -> dict:
-    logger.error("Resume optimisation failed for user=%s", state.get("user_id"))
-    return {"error": "Resume optimisation failed. Please try again."}
-
-
 # ── Graph ───────────────────────────────────────────────────────────────────
 
 
@@ -1168,14 +1163,12 @@ def build_resume_optimizer_graph() -> StateGraph:
     graph.add_node("tailor_resume", tailor_resume_node)
     graph.add_node("verify_fidelity", verify_fidelity_node)
     graph.add_node("build_resume", build_resume_node)
-    graph.add_node("error_node", error_node)
 
     graph.add_edge(START, "analyze_job")
     graph.add_edge("analyze_job", "tailor_resume")
     graph.add_edge("tailor_resume", "verify_fidelity")
     graph.add_edge("verify_fidelity", "build_resume")
     graph.add_edge("build_resume", END)
-    graph.add_edge("error_node", END)
 
     return graph
 

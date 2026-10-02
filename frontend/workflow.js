@@ -10,23 +10,7 @@
     let mouse = { x: -9999, y: -9999 };
     let raf;
 
-    function isLightTheme() {
-        return document.body.classList.contains('light-theme');
-    }
-
     function getThemeColors() {
-        if (isLightTheme()) {
-            return {
-                grid: 'rgba(0,0,0,0.04)',
-                edgeGrad: ['rgba(62,207,142,0.06)', 'rgba(26,173,109,0.04)', 'rgba(62,207,142,0.06)'],
-                edgeDash: 'rgba(0,0,0,0.04)',
-                nodeFill: 'rgba(255,255,255,0.9)',
-                nodeStroke: 'rgba(62,207,142,0.2)',
-                nodeIcon: 'rgba(62,207,142,0.6)',
-                nodeLabel: 'rgba(0,0,0,0.35)',
-                glowColor: 'rgba(62,207,142,'
-            };
-        }
         return {
             grid: 'rgba(255,255,255,0.008)',
             edgeGrad: ['rgba(62,207,142,0.02)', 'rgba(26,173,109,0.015)', 'rgba(62,207,142,0.02)'],
@@ -199,11 +183,7 @@
             ctx.beginPath(); ctx.arc(n.x, n.y, glowR, 0, Math.PI * 2); ctx.fill();
 
             ctx.fillStyle = colors.nodeFill;
-            if (isLightTheme()) {
-                ctx.strokeStyle = colors.nodeStroke;
-            } else {
-                ctx.strokeStyle = colors.nodeStroke + (0.06 + mouseGlow * 0.15) + ')';
-            }
+            ctx.strokeStyle = colors.nodeStroke + (0.06 + mouseGlow * 0.15) + ')';
             ctx.lineWidth = 0.8;
             ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 
@@ -236,12 +216,6 @@
     });
     document.addEventListener('mousemove', function (e) { mouse.x = e.clientX; mouse.y = e.clientY; });
     document.addEventListener('mouseleave', function () { mouse.x = -9999; mouse.y = -9999; });
-
-    // Watch for theme changes
-    const observer = new MutationObserver(function () {
-        // Colors auto-adapt on next frame via getThemeColors()
-    });
-    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
     resize();
     raf = requestAnimationFrame(draw);

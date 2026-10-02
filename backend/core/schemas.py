@@ -24,37 +24,6 @@ class ProficiencyLevel(str, Enum):
     expert = "expert"
 
 
-class ApplicationStatus(str, Enum):
-    saved = "saved"
-    applied = "applied"
-    oa = "oa"
-    interview = "interview"
-    final_round = "final_round"
-    offer = "offer"
-    rejected = "rejected"
-    withdrawn = "withdrawn"
-
-
-class InterviewCategory(str, Enum):
-    technical = "technical"
-    behavioral = "behavioral"
-    system_design = "system_design"
-    resume = "resume"
-    role_specific = "role_specific"
-
-
-class QuestionDifficulty(str, Enum):
-    easy = "easy"
-    medium = "medium"
-    hard = "hard"
-
-
-class MessageRole(str, Enum):
-    user = "user"
-    assistant = "assistant"
-    system = "system"
-
-
 # ── Resume Sub-models ────────────────────────────────────────────────────────
 
 
@@ -200,60 +169,6 @@ class CareerPlan(BaseModel):
     cache_key: str = ""
 
 
-# ── Applications ─────────────────────────────────────────────────────────────
-
-
-class Application(BaseModel):
-    id: UUID | None = None
-    job_id: UUID
-    resume_version_id: UUID
-    status: ApplicationStatus = ApplicationStatus.saved
-    notes: str = ""
-    ats_score: float | None = None
-    match_score: float | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-# ── Interview ────────────────────────────────────────────────────────────────
-
-
-class InterviewQuestion(BaseModel):
-    id: UUID | None = None
-    question: str
-    category: InterviewCategory = InterviewCategory.technical
-    difficulty: QuestionDifficulty = QuestionDifficulty.medium
-
-
-class InterviewSession(BaseModel):
-    id: UUID | None = None
-    job_id: UUID
-    resume_version_id: UUID
-    questions: list[InterviewQuestion] = Field(default_factory=list)
-    answers: dict[str, str] = Field(default_factory=dict)
-    feedback: dict[str, str] = Field(default_factory=dict)
-    overall_score: float = 0.0
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-# ── Chat / Conversation ─────────────────────────────────────────────────────
-
-
-class ChatMessage(BaseModel):
-    role: MessageRole
-    content: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-class Conversation(BaseModel):
-    id: UUID | None = None
-    user_id: UUID
-    messages: list[ChatMessage] = Field(default_factory=list)
-    summary: str = ""
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
 # ── Market Intelligence ──────────────────────────────────────────────────────
 
 
@@ -266,48 +181,6 @@ class MarketSnapshot(BaseModel):
     salary_distribution: dict[str, float] = Field(default_factory=dict)
     remote_percentage: float = 0.0
     technology_trends: list[str] = Field(default_factory=list)
-    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-# ── Resume Versioning ────────────────────────────────────────────────────────
-
-
-class ResumeVersion(BaseModel):
-    id: UUID | None = None
-    resume_id: UUID
-    version_number: int = 1
-    target_role: str = ""
-    content_hash: str = ""
-    ats_score: float | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-# ── Cover Letter ──────────────────────────────────────────────────────────
-
-
-class CoverLetterRequest(BaseModel):
-    """Request to generate a cover letter."""
-
-    resume_id: UUID
-    job_id: UUID | None = None
-    job_title: str = ""
-    company_name: str = ""
-    job_description: str = ""
-    tone: str = "professional"  # professional, enthusiastic, confident, creative
-
-
-class CoverLetter(BaseModel):
-    """Generated cover letter for a specific job application."""
-
-    id: UUID | None = None
-    user_id: UUID
-    resume_id: UUID
-    job_id: UUID | None = None
-    job_title: str = ""
-    company_name: str = ""
-    tone: str = "professional"
-    content: str = ""
-    key_highlights: list[str] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

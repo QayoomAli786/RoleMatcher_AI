@@ -6,45 +6,6 @@ import uuid
 from dataclasses import dataclass, field
 
 
-# ── User Store ────────────────────────────────────────────────────────────────
-
-@dataclass
-class _User:
-    id: uuid.UUID
-    email: str
-    name: str
-    hashed_password: str = ""
-
-
-_users_by_email: dict[str, _User] = {}
-_users_by_id: dict[uuid.UUID, _User] = {}
-
-
-def create_user(email: str, name: str, hashed_password: str = "") -> _User:
-    uid = uuid.uuid4()
-    user = _User(id=uid, email=email, name=name, hashed_password=hashed_password)
-    _users_by_email[email] = user
-    _users_by_id[uid] = user
-    return user
-
-
-def get_user_by_email(email: str) -> _User | None:
-    return _users_by_email.get(email)
-
-
-def get_user_by_id(uid: uuid.UUID) -> _User | None:
-    return _users_by_id.get(uid)
-
-
-def ensure_user(uid: uuid.UUID, email: str, name: str) -> _User:
-    if uid in _users_by_id:
-        return _users_by_id[uid]
-    user = _User(id=uid, email=email, name=name)
-    _users_by_id[uid] = user
-    _users_by_email[email] = user
-    return user
-
-
 # ── Resume Store ──────────────────────────────────────────────────────────────
 
 @dataclass
@@ -172,7 +133,3 @@ def list_generic(store: dict, user_id: uuid.UUID) -> list[dict]:
 def list_all_generic(store: dict) -> list[dict]:
     """Return all entries in a generic store (for shared/public data)."""
     return list(store.values())
-
-
-def delete_generic(store: dict, key: uuid.UUID) -> bool:
-    return store.pop(key, None) is not None

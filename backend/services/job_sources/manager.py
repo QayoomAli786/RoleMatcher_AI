@@ -8,9 +8,8 @@ from typing import Sequence
 
 from backend.core.schemas import Job
 from backend.services.job_deduplicator import deduplicate as deduplicate_jobs
-from backend.services.job_sources.base import AbstractJobSource, SourceConfig, SourceError
+from backend.services.job_sources.base import AbstractJobSource
 from backend.services.job_sources.adzuna import AdzunaSource
-from backend.services.job_sources.generic_scraper import GenericScraperSource
 from backend.services.job_sources.linkedin import LinkedInSource
 from backend.services.job_sources.remoteok import RemoteOKSource
 
@@ -41,10 +40,6 @@ class JobSourceManager:
         self.register(LinkedInSource())
         self.register(RemoteOKSource())
         self.register(AdzunaSource())
-
-    def add_custom_scraper(self, url: str) -> None:
-        source = GenericScraperSource(target_url=url)
-        self.register(source)
 
     # ── Collection ─────────────────────────────────────────────────────────
 
@@ -117,25 +112,3 @@ class JobSourceManager:
         sem = self._semaphores[source.config.name]
         async with sem:
             return await source.fetch(query, limit)
-
-    # ── Health ─────────────────────────────────────────────────────────────
-
-    async def health_check_all(self) -> dict[str, bool]:
-        """Check health of every registered source concurrently."""
-        tasks = {
-            name: source.health_check() for name, source in self._sources.items()
-        }
-        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
-        return {
-            name: (result is True)
-            for name, result in zip(tasks.keys(), results)
-        }
-
-    # ── Introspection ──────────────────────────────────────────────────────
-
-    @property
-    def source_names(self) -> list[str]:
-        return list(self._sources.keys())
-
-    def get_source(self, name: str) -> AbstractJobSource | None:
-        return self._sources.get(name)

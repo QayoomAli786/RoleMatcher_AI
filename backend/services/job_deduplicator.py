@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections import defaultdict
 from typing import Sequence
 
 from backend.core.schemas import Job
@@ -116,36 +115,3 @@ def _merge_into(target: Job, source: Job) -> None:
         target.posted_at = source.posted_at
     if target.source == "generic" and source.source != "generic":
         target.source = source.source
-
-
-def find_duplicates(jobs: Sequence[Job], *, similarity_threshold: float = 0.7) -> list[tuple[int, int]]:
-    """Return pairs of (i, j) indices where jobs[i] and jobs[j] are duplicates."""
-    fps: dict[str, list[int]] = defaultdict(list)
-    urls: dict[str, list[int]] = defaultdict(list)
-    token_list: list[set[str]] = []
-    duplicates: list[tuple[int, int]] = []
-
-    for i, job in enumerate(jobs):
-        fp = _fingerprint(job)
-        for j in fps[fp]:
-            duplicates.append((j, i))
-        fps[fp].append(i)
-
-        norm_url = _normalize_url(job.source_url) if job.source_url else ""
-        if norm_url:
-            for j in urls[norm_url]:
-                duplicates.append((j, i))
-            urls[norm_url].append(i)
-
-        job_tokens = _tokenize(f"{job.title} {job.description[:500]}")
-        for j, existing_tokens in enumerate(token_list):
-            if not job_tokens or not existing_tokens:
-                continue
-            overlap = len(job_tokens & existing_tokens) / max(len(job_tokens | existing_tokens), 1)
-            if overlap >= similarity_threshold:
-                duplicates.append((j, i))
-                break
-
-        token_list.append(job_tokens)
-
-    return duplicates

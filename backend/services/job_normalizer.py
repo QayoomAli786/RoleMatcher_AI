@@ -118,7 +118,7 @@ def _normalize_seniority(title: str, raw: str = "") -> str:
     return "mid"
 
 
-def _extract_skills_from_text(text: str) -> list[str]:
+def extract_skills_from_description(text: str) -> list[str]:
     """Extract known tech skills from job description."""
     text_lower = text.lower()
     found: list[str] = []
@@ -133,86 +133,12 @@ def _extract_skills_from_text(text: str) -> list[str]:
 # ── Source Normalizers ────────────────────────────────────────────────────────
 
 
-def normalize_remotive_job(raw: dict) -> Job:
-    """Normalize a Remotive API job listing."""
-    location, remote = _normalize_location(raw.get("candidate_required_location", "Remote"))
-    salary_min, salary_max, currency = _parse_salary_range(raw.get("salary", ""))
-    title = raw.get("title", "")
-    desc = raw.get("description", "")
-    tags = raw.get("tags", [])
-    if isinstance(tags, list):
-        skills = [t.lower().strip() for t in tags if isinstance(t, str)]
-    else:
-        skills = _extract_skills_from_text(desc)
-
-    posted = None
-    if raw.get("publication_date"):
-        try:
-            posted = datetime.fromisoformat(raw["publication_date"].replace("Z", "+00:00"))
-        except (ValueError, TypeError):
-            pass
-
-    return Job(
-        source="remotive",
-        source_job_id=str(raw.get("id", "")),
-        title=title,
-        company=raw.get("company_name", ""),
-        location=location or "Remote",
-        remote=True,
-        description=desc,
-        skills=skills,
-        salary_min=salary_min,
-        salary_max=salary_max,
-        currency=currency,
-        employment_type=_normalize_employment_type(raw.get("job_type", "")),
-        seniority=_normalize_seniority(title),
-        posted_at=posted,
-        source_url=raw.get("url", ""),
-    )
-
-
-def normalize_jobicy_job(raw: dict) -> Job:
-    """Normalize a Jobicy API job listing."""
-    location, remote = _normalize_location(raw.get("job_location", ""))
-    salary_min, salary_max, currency = _parse_salary_range(
-        f"${raw.get('annual_salary_min', '')} - ${raw.get('annual_salary_max', '')}"
-    )
-    title = raw.get("job_title", "")
-    desc = raw.get("job_description", "")
-    skills = _extract_skills_from_text(desc)
-
-    posted = None
-    if raw.get("pubDate"):
-        try:
-            posted = datetime.strptime(raw["pubDate"], "%Y-%m-%d %H:%M:%S")
-        except (ValueError, TypeError):
-            pass
-
-    return Job(
-        source="jobicy",
-        source_job_id=str(raw.get("id", "")),
-        title=title,
-        company=raw.get("company_name", ""),
-        location=location or "Remote",
-        remote=remote or raw.get("job_type", "").lower() == "remote",
-        description=desc,
-        skills=skills,
-        salary_min=salary_min,
-        salary_max=salary_max,
-        currency=currency or "USD",
-        employment_type=_normalize_employment_type(raw.get("job_type", "")),
-        seniority=_normalize_seniority(title, raw.get("job_type", "")),
-        posted_at=posted,
-        source_url=raw.get("url", ""),
-    )
-
-
 def normalize_linkedin_job(raw: dict) -> Job:
     """Normalize a LinkedIn job listing dict."""
     location, remote = _normalize_location(raw.get("location", ""))
     title = raw.get("title", "")
     desc = raw.get("description", "")
-    skills = _extract_skills_from_text(desc)
+    skills = extract_skills_from_description(desc)
 
     posted = None
     if raw.get("postedDate"):
@@ -253,7 +179,7 @@ def normalize_generic_job(raw: dict) -> Job:
 
     location, remote = _normalize_location(location_field)
     salary_min, salary_max, currency = _parse_salary_range(salary_raw)
-    skills = _extract_skills_from_text(desc_field)
+    skills = extract_skills_from_description(desc_field)
 
     posted = None
     for date_field in ("posted_at", "postedDate", "created_at", "date", "pubDate", "published"):
@@ -286,11 +212,6 @@ def normalize_generic_job(raw: dict) -> Job:
         posted_at=posted,
         source_url=url_field,
     )
-
-
-def extract_skills_from_description(description: str) -> list[str]:
-    """Public convenience wrapper."""
-    return _extract_skills_from_text(description)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

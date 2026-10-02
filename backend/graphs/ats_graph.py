@@ -41,17 +41,6 @@ async def extract_keywords_node(state: ATSState) -> dict:
     return {"deterministic_score": {"_job_keywords": keywords}}
 
 
-async def analyze_skills_node(state: ATSState) -> dict:
-    """Analyze skill coverage between resume and job description."""
-    # Pre-computation step; actual scoring happens in calculate_deterministic_score
-    return {}
-
-
-async def analyze_experience_node(state: ATSState) -> dict:
-    """Analyze experience relevance and seniority alignment."""
-    return {}
-
-
 async def calculate_deterministic_score_node(state: ATSState) -> dict:
     """Run the deterministic ATS scoring engine."""
     resume_text = state.get("resume_text", "")
@@ -144,16 +133,6 @@ async def build_report_node(state: ATSState) -> dict:
     return {"report": report.model_dump()}
 
 
-async def error_node(state: ATSState) -> dict:
-    """Handle pipeline errors."""
-    logger.error(
-        "ATS pipeline failed for user=%s job=%s",
-        state.get("user_id"),
-        state.get("job_id"),
-    )
-    return {"report": ATSReport(overall_score=0.0).model_dump()}
-
-
 # ── Routing ────────────────────────────────────────────────────────────────────
 
 
@@ -174,18 +153,13 @@ def build_ats_graph() -> StateGraph:
 
     # Nodes
     graph.add_node("extract_keywords", extract_keywords_node)
-    graph.add_node("analyze_skills", analyze_skills_node)
-    graph.add_node("analyze_experience", analyze_experience_node)
     graph.add_node("calculate_deterministic_score", calculate_deterministic_score_node)
     graph.add_node("generate_llm_explanation", generate_llm_explanation_node)
     graph.add_node("build_report", build_report_node)
-    graph.add_node("error_node", error_node)
 
     # Edges
     graph.add_edge(START, "extract_keywords")
-    graph.add_edge("extract_keywords", "analyze_skills")
-    graph.add_edge("analyze_skills", "analyze_experience")
-    graph.add_edge("analyze_experience", "calculate_deterministic_score")
+    graph.add_edge("extract_keywords", "calculate_deterministic_score")
     graph.add_conditional_edges(
         "calculate_deterministic_score",
         route_after_score,
@@ -196,7 +170,6 @@ def build_ats_graph() -> StateGraph:
     )
     graph.add_edge("generate_llm_explanation", "build_report")
     graph.add_edge("build_report", END)
-    graph.add_edge("error_node", END)
 
     return graph
 

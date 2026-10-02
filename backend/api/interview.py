@@ -350,12 +350,15 @@ async def _evaluate_answer(question: dict, answer: str) -> dict:
         "1. Score (integer 1-10)\n"
         "2. Strengths: 2-3 bullet points of what was good\n"
         "3. Improvements: 2-3 bullet points of what could be better\n"
-        "4. Model Answer: A well-structured, detailed answer using markdown formatting\n\n"
+        "4. Model Answer: what a strong candidate would say, kept SHORT\n\n"
         "Format:\n"
         "SCORE: <number>\n"
         "STRENGTHS:\n- ...\n- ...\n"
         "IMPROVEMENTS:\n- ...\n- ...\n"
-        "MODEL ANSWER:\n<use markdown with headings, bold, bullet points, and numbered lists as needed>"
+        "MODEL ANSWER:\n"
+        "At most 5 lines total. Plain markdown: either a short paragraph of 3-4 sentences "
+        "or up to 4 short bullets. No headings, no bold except an optional leading label, "
+        "no numbered lists, no filler."
     )
 
     try:
@@ -406,7 +409,8 @@ def _parse_evaluation(text: str) -> dict:
         elif section == "improvements" and line.startswith("-"):
             improvements.append(line.lstrip("- ").strip())
         elif section == "model_answer":
-            model_answer += (" " if model_answer else "") + line
+            # Keep line breaks: marked() needs them to render paragraphs and lists.
+            model_answer += ("\n" if model_answer else "") + line
 
     feedback = (
         f"Score: {score}/10\n"

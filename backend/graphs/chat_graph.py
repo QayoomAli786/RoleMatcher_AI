@@ -1,28 +1,30 @@
 """LangGraph StateGraph for the career chatbot assistant.
 
 Workflow:
-    classify_intent -> retrieve_context -> select_tools ->
-    execute_tools -> generate_response
+    classify_intent -> select_tools -> execute_tools -> generate_response
 
 Tool selection: get_resume, search_jobs, get_ats_score, get_skill_gaps,
-get_career_plan, generate_interview_questions. Context minimization:
-only retrieve what is needed for the question.
+get_career_plan, generate_interview_questions. Each tool loads only the
+context it needs.
 """
 
 from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import Literal, TypedDict
+from typing import Literal
 
 from langgraph.graph import END, START, StateGraph
 
 from backend.core.state import ChatState
+from backend.services.job_sources.manager import JobSourceManager
 from backend.services.llm_service import ModelRouter, TaskCategory
 
 logger = logging.getLogger(__name__)
 
 _router = ModelRouter()
+_source_manager = JobSourceManager()
+_source_manager.register_default_sources()
 
 
 # ── Intent Classification ──────────────────────────────────────────────────────
@@ -82,19 +84,6 @@ def _classify_intent(text: str) -> Intent:
     return best
 
 
-# ── Tool Definitions ───────────────────────────────────────────────────────────
-
-
-_TOOLS = {
-    "get_resume": "Retrieve the user's resume profile and skills",
-    "search_jobs": "Search for job listings matching the user's profile",
-    "get_ats_score": "Analyze resume against a specific job description",
-    "get_skill_gaps": "Identify gaps between user's skills and target role",
-    "get_career_plan": "Generate a career development plan",
-    "generate_interview_questions": "Create interview questions for practice",
-}
-
-
 # ── Nodes ──────────────────────────────────────────────────────────────────────
 
 
@@ -104,38 +93,6 @@ async def classify_intent_node(state: ChatState) -> dict:
     intent = _classify_intent(message)
 
     return {"context": {**state.get("context", {}), "intent": intent.value}}
-
-
-async def retrieve_context_node(state: ChatState) -> dict:
-    """Retrieve minimal context needed for the classified intent."""
-    intent = state.get("context", {}).get("intent", "general_chat")
-    context = state.get("context", {})
-
-    # Only retrieve what the specific intent needs
-    if intent == Intent.RESUME_QUERY.value:
-        # Would load from DB in production
-        context["resume_loaded"] = True
-
-    elif intent == Intent.JOB_SEARCH.value:
-        context["search_ready"] = True
-
-    elif intent == Intent.ATS_ANALYSIS.value:
-        context["resume_loaded"] = True
-        context["job_desc_needed"] = True
-
-    elif intent == Intent.SKILL_GAPS.value:
-        context["resume_loaded"] = True
-        context["market_data_needed"] = True
-
-    elif intent == Intent.CAREER_PLANNING.value:
-        context["resume_loaded"] = True
-        context["market_data_needed"] = True
-
-    elif intent == Intent.INTERVIEW_PREP.value:
-        context["resume_loaded"] = True
-        context["job_info_needed"] = True
-
-    return {"context": context}
 
 
 async def select_tools_node(state: ChatState) -> dict:
@@ -210,13 +167,9 @@ async def _get_resume_context(user_id) -> str:
 
 async def _search_jobs_context(state: ChatState) -> str:
     """Search for jobs matching the user's profile."""
-    from backend.services.job_sources.manager import JobSourceManager
-
-    manager = JobSourceManager()
-    manager.register_default_sources()
     query = state.get("message", "software engineer")
     try:
-        jobs = await manager.collect_jobs(query=query, limit=5)
+        jobs = await _source_manager.collect_jobs(query=query, limit=5)
         if not jobs:
             return "No matching jobs found right now."
         summaries = []
@@ -314,12 +267,12 @@ async def error_node(state: ChatState) -> dict:
 # ── Routing ────────────────────────────────────────────────────────────────────
 
 
-def route_after_classify(state: ChatState) -> Literal["retrieve_context", "error_node"]:
+def route_after_classify(state: ChatState) -> Literal["select_tools", "error_node"]:
     """Branch based on whether intent was classified."""
     intent = state.get("context", {}).get("intent")
     if not intent:
         return "error_node"
-    return "retrieve_context"
+    return "select_tools"
 
 
 # ── Graph ──────────────────────────────────────────────────────────────────────
@@ -330,7 +283,6 @@ def build_chat_graph() -> StateGraph:
     graph = StateGraph(ChatState)
 
     graph.add_node("classify_intent", classify_intent_node)
-    graph.add_node("retrieve_context", retrieve_context_node)
     graph.add_node("select_tools", select_tools_node)
     graph.add_node("execute_tools", execute_tools_node)
     graph.add_node("generate_response", generate_response_node)
@@ -340,9 +292,8 @@ def build_chat_graph() -> StateGraph:
     graph.add_conditional_edges(
         "classify_intent",
         route_after_classify,
-        {"retrieve_context": "retrieve_context", "error_node": "error_node"},
+        {"select_tools": "select_tools", "error_node": "error_node"},
     )
-    graph.add_edge("retrieve_context", "select_tools")
     graph.add_edge("select_tools", "execute_tools")
     graph.add_edge("execute_tools", "generate_response")
     graph.add_edge("generate_response", END)

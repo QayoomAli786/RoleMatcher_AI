@@ -14,7 +14,7 @@ router = APIRouter(prefix="/ats")
 
 @router.post("/analyze")
 async def analyze_ats(user: UserProfile = Depends(get_current_user)):
-    raise HTTPException(status_code=501, detail="ATS analysis requires database storage")
+    raise HTTPException(status_code=501, detail="ATS analysis not available in in-memory mode")
 
 
 @router.get("/reports")
@@ -29,4 +29,4 @@ async def get_report(report_id: uuid.UUID, user: UserProfile = Depends(get_curre
 
 @router.post("/optimize")
 async def optimize_resume(user: UserProfile = Depends(get_current_user)):
-    raise HTTPException(status_code=501, detail="Optimization requires database storage")
+    raise HTTPException(status_code=501, detail="Optimization not available in in-memory mode")

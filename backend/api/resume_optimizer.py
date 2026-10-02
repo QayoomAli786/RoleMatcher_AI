@@ -18,7 +18,7 @@ from backend.core.store import (
     list_resumes,
     store_generic,
 )
-from backend.graphs.orchestrator import run_resume_optimizer_pipeline
+from backend.graphs.resume_optimizer_graph import resume_optimizer_pipeline
 from backend.security.auth import get_current_user
 from backend.services.docx_builder import build_resume_docx, resume_filename
 
@@ -117,15 +117,21 @@ async def tailor_resume(
             job_uuid = None
 
     try:
-        result = await run_resume_optimizer_pipeline(
-            user_id=user.id,
-            resume_id=resume.id,
-            job_description=job_desc,
-            job_title=job_title,
-            company_name=company_name,
-            job_id=job_uuid,
-            resume_profile=resume.parsed_profile or {},
-            resume_text=resume.raw_text,
+        result = await resume_optimizer_pipeline.ainvoke(
+            {
+                "user_id": user.id,
+                "resume_id": resume.id,
+                "job_id": job_uuid,
+                "resume_text": resume.raw_text,
+                "resume_profile": resume.parsed_profile or {},
+                "job_description": job_desc,
+                "job_title": job_title,
+                "company_name": company_name,
+                "target_keywords": [],
+                "optimized": {},
+                "stripped": [],
+                "error": None,
+            }
         )
     except Exception as exc:
         logger.error("Resume optimisation failed: %s", exc)

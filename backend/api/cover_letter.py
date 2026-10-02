@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.core.schemas import UserProfile
-from backend.core.store import _cover_letters, get_resume, get_generic, list_generic, store_generic
-from backend.graphs.orchestrator import run_cover_letter_pipeline
+from backend.core.store import _cover_letters, get_resume, list_generic, store_generic
+from backend.graphs.cover_letter_graph import cover_letter_pipeline
 from backend.security.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -42,14 +41,20 @@ async def generate_cover_letter(body: _CoverLetterBody, user: UserProfile = Depe
             resume_profile = resume.parsed_profile or {}
             resume_text = resume.raw_text
 
-    result = await run_cover_letter_pipeline(
-        user_id=user.id,
-        resume_id=resume_id or uuid.UUID("00000000-0000-0000-0000-000000000000"),
-        job_description=body.job_description or "",
-        job_title=title,
-        company_name=company,
-        tone=body.tone or "professional",
-        resume_profile=resume_profile,
+    result = await cover_letter_pipeline.ainvoke(
+        {
+            "user_id": user.id,
+            "resume_id": resume_id or uuid.UUID("00000000-0000-0000-0000-000000000000"),
+            "job_id": None,
+            "resume_text": resume_text,
+            "job_description": body.job_description or "",
+            "job_title": title,
+            "company_name": company,
+            "resume_profile": resume_profile,
+            "tone": body.tone or "professional",
+            "cover_letter": "",
+            "error": None,
+        }
     )
 
     content = result.get("cover_letter", "")

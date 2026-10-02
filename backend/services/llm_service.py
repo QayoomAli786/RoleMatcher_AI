@@ -1,7 +1,7 @@
 """Centralized LLM service — LangChain-backed model routing, structured output, caching, cost tracking.
 
 Uses LangChain chat models (Google Gemini, Groq, OpenAI, DeepSeek, Qwen) instead of
-raw litellm calls. The public API (``ModelRouter.complete`` / ``stream`` /
+raw litellm calls. The public API (``ModelRouter.complete`` /
 ``structured``) is unchanged, so every LangGraph node keeps working as-is.
 """
 
@@ -13,11 +13,13 @@ import logging
 import time
 from contextvars import ContextVar, Token
 from enum import Enum
-from typing import Any, AsyncIterator, TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
 from backend.core.config import get_settings
+from backend.observability.metrics import metrics
+from backend.observability.tracing import log_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +146,6 @@ class ModelRouter:
     def __init__(self) -> None:
         self._settings = get_settings()
         self._cache: dict[str, Any] = {}
-        self._usage_log: list[dict[str, Any]] = []
 
     # ── Model selection ────────────────────────────────────────────────────
 
@@ -273,8 +274,10 @@ class ModelRouter:
         if use_cache:
             key = self._cache_key(chosen_model, messages, temp)
             if key in self._cache:
+                metrics.inc("cache_hits")
                 logger.debug("Cache hit for %s", key[:12])
                 return self._cache[key]
+            metrics.inc("cache_misses")
 
         # Try primary model, then fallback
         for attempt_model in (chosen_model, self._fallback_model(chosen_model)):
@@ -306,26 +309,18 @@ class ModelRouter:
         temperature: float,
         max_tokens: int,
         response_format: type[BaseModel] | None = None,
-        api_key: str | None = None,
-        api_base: str | None = None,
     ) -> str | BaseModel:
         """Execute a single LangChain chat-model completion call."""
-        # Prefer explicit api_key, then the per-request override, then env vars
-        effective_key = api_key or get_request_api_key() or ""
-
         chat = self._build_chat_model(
             model,
             temperature=temperature,
             max_tokens=max_tokens,
-            api_key=effective_key,
+            api_key=get_request_api_key() or "",
         )
-        if api_base:
-            # Allow an explicit base URL override (e.g. custom OpenAI-compatible endpoints)
-            chat.base_url = api_base
 
         t0 = time.monotonic()
         response = await chat.ainvoke(messages)
-        elapsed = time.monotonic() - t0
+        elapsed_ms = (time.monotonic() - t0) * 1000
 
         content = ""
         if isinstance(response.content, str):
@@ -340,25 +335,15 @@ class ModelRouter:
         meta = getattr(response, "usage_metadata", None) or {}
         prompt_tokens = meta.get("input_tokens", 0) or 0
         completion_tokens = meta.get("output_tokens", 0) or 0
-        total_tokens = prompt_tokens + completion_tokens
         cost = self._estimate_cost(model, prompt_tokens, completion_tokens)
 
-        self._usage_log.append(
-            {
-                "model": model,
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": total_tokens,
-                "cost_usd": cost,
-                "elapsed_s": round(elapsed, 3),
-            }
-        )
+        log_llm_call(model, prompt_tokens, completion_tokens, elapsed_ms, cost)
         logger.info(
             "LLM %s: %d tokens, $%.4f, %.2fs",
             model,
-            total_tokens,
+            prompt_tokens + completion_tokens,
             cost,
-            elapsed,
+            elapsed_ms / 1000,
         )
 
         if response_format is not None:
@@ -421,118 +406,3 @@ class ModelRouter:
     def _estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
         rates = _COST_TABLE.get(model, {"input": 1.0, "output": 3.0})
         return (prompt_tokens * rates["input"] + completion_tokens * rates["output"]) / 1_000_000
-
-    @property
-    def total_cost(self) -> float:
-        return sum(e["cost_usd"] for e in self._usage_log)
-
-    @property
-    def total_tokens(self) -> int:
-        return sum(e["total_tokens"] for e in self._usage_log)
-
-    @property
-    def usage_log(self) -> list[dict[str, Any]]:
-        return list(self._usage_log)
-
-    # ── Streaming ───────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _resolve_api_base(model: str) -> str | None:
-        """Return the API base URL for models that need one (e.g. Qwen/DeepSeek)."""
-        provider, model_name = ModelRouter._split_model(model)
-        base = _OPENAI_COMPATIBLE.get(provider)
-        if not base and "qwen" in model_name.lower():
-            base = _OPENAI_COMPATIBLE["qwen"]
-        return base
-
-    async def stream(
-        self,
-        prompt: str,
-        *,
-        model: str | None = None,
-        system: str = "You are an expert AI career coach. Be concise and helpful.",
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        api_key: str | None = None,
-    ) -> AsyncIterator[str]:
-        """Yield text chunks from a streaming LangChain chat completion."""
-        settings = self._settings
-        chosen_model = model or settings.fast_model
-        temp = temperature if temperature is not None else settings.llm_temperature
-        tokens = max_tokens or settings.llm_max_tokens
-
-        messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-        ]
-
-        effective_key = api_key or get_request_api_key() or ""
-
-        try:
-            chat = self._build_chat_model(
-                chosen_model,
-                temperature=temp,
-                max_tokens=tokens,
-                api_key=effective_key,
-            )
-            async for chunk in chat.astream(messages):
-                text = getattr(chunk, "content", "") or ""
-                if isinstance(text, list):
-                    text = "".join(str(p.get("text", "")) for p in text if isinstance(p, dict))
-                if text:
-                    yield text
-        except Exception as exc:
-            logger.warning("Stream failed on %s: %s — trying fallback", chosen_model, exc)
-            fallback = self._fallback_model(chosen_model)
-            try:
-                fb_chat = self._build_chat_model(
-                    fallback,
-                    temperature=temp,
-                    max_tokens=tokens,
-                    api_key=effective_key,
-                )
-                async for chunk in fb_chat.astream(messages):
-                    text = getattr(chunk, "content", "") or ""
-                    if isinstance(text, list):
-                        text = "".join(str(p.get("text", "")) for p in text if isinstance(p, dict))
-                    if text:
-                        yield text
-            except Exception as exc2:
-                logger.error("All streaming models failed: %s", exc2)
-                yield "I'm sorry, I encountered an error. Please try again."
-
-
-# ── LLMService alias for backward compatibility ─────────────────────────────
-
-
-class LLMService:
-    """Thin wrapper used by the chat endpoint.  Delegates to the global ModelRouter singleton."""
-
-    def __init__(self) -> None:
-        # Always use the module-level singleton — never create a new ModelRouter
-        global _llm_service
-        if _llm_service is None:
-            _llm_service = ModelRouter()
-        self._router = _llm_service
-
-    async def stream(
-        self, prompt: str, *, model: str | None = None, api_key: str | None = None, **kwargs: Any
-    ) -> AsyncIterator[str]:
-        async for chunk in self._router.stream(prompt, model=model, api_key=api_key, **kwargs):
-            yield chunk
-
-    async def complete(self, *args: Any, **kwargs: Any) -> str | BaseModel:
-        return await self._router.complete(*args, **kwargs)
-
-
-# ── Module-level singleton ───────────────────────────────────────────────────
-
-_llm_service: ModelRouter | None = None
-
-
-def get_llm_service() -> ModelRouter:
-    """Return (and create on first call) the global ModelRouter singleton."""
-    global _llm_service
-    if _llm_service is None:
-        _llm_service = ModelRouter()
-    return _llm_service

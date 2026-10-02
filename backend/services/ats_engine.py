@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import math
 import re
 from collections import Counter
 
 from backend.core.schemas import ATSReport, ResumeProfile
+from backend.services.skill_aliases import normalize_skill
 
 # ── Stopwords ─────────────────────────────────────────────────────────────────
 
@@ -66,32 +66,16 @@ def _keyword_score(resume_text: str, job_keywords: list[str]) -> tuple[float, li
 
 
 def _skill_score(resume_skills: list[str], job_keywords: list[str]) -> tuple[float, list[str]]:
-    resume_set = {s.lower() for s in resume_skills}
-    job_set = {k.lower() for k in job_keywords}
-
-    # Include aliases
-    _ALIASES: dict[str, set[str]] = {
-        "javascript": {"js"}, "typescript": {"ts"}, "python": {"py"},
-        "react": {"reactjs", "react.js"}, "vue": {"vuejs", "vue.js"},
-        "angular": {"angularjs", "angular.js"}, "node": {"nodejs", "node.js"},
-        "kubernetes": {"k8s"}, "postgresql": {"postgres"},
-        "mongodb": {"mongo"}, "dynamodb": {"dynamo"},
-        "tensorflow": {"tf"}, "pytorch": {"pt"},
-        "scikit-learn": {"sklearn"},
-    }
-
-    for canonical, aliases in _ALIASES.items():
-        if canonical in resume_set:
-            resume_set.update(aliases)
-        for a in aliases:
-            if a in resume_set:
-                resume_set.add(canonical)
-
-    matched = resume_set & job_set
-    missing = list(job_set - resume_set)
+    # Normalise both sides through the shared alias map so "js"/"javascript",
+    # "postgres"/"postgresql", etc. compare equal.
+    resume_set = {normalize_skill(s).lower() for s in resume_skills}
+    job_set = {normalize_skill(k).lower() for k in job_keywords}
 
     if not job_set:
         return 100.0, []
+
+    matched = resume_set & job_set
+    missing = list(job_set - resume_set)
 
     score = (len(matched) / len(job_set)) * 100
     return round(score, 1), missing

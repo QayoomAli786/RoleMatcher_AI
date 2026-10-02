@@ -13,10 +13,12 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 
 from backend.observability.metrics import metrics
 
+# Paths excluded from request metrics (health checks, docs).
+SKIP_PATHS = frozenset({"/api/health", "/docs", "/openapi.json", "/redoc"})
+
 # ── Context variables ────────────────────────────────────────────────────────
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
-user_id_var: ContextVar[str] = ContextVar("user_id", default="")
 
 # ── Structured logger ────────────────────────────────────────────────────────
 
@@ -53,7 +55,7 @@ def log_llm_call(
     latency_ms: float,
     cost_usd: float = 0.0,
 ) -> None:
-    """Log a completed LLM invocation."""
+    """Log a completed LLM invocation and record it in the metrics store."""
     metrics.inc("total_llm_calls")
     metrics.inc("total_tokens", prompt_tokens + completion_tokens)
     metrics.inc("total_cost_usd", cost_usd)
@@ -69,25 +71,6 @@ def log_llm_call(
             "latency_ms": round(latency_ms, 2),
             "cost_usd": round(cost_usd, 6),
             "request_id": request_id_var.get(""),
-            "user_id": user_id_var.get(""),
-        },
-    )
-
-
-def log_graph_execution(graph_name: str, latency_ms: float, state_keys: list[str]) -> None:
-    """Log completion of a LangGraph graph execution."""
-    metrics.inc(f"graph_{graph_name}_executions")
-    metrics.observe(f"graph_{graph_name}_latency_ms", latency_ms)
-
-    logger.info(
-        "graph_execution",
-        extra={
-            "event": "graph_execution",
-            "graph": graph_name,
-            "latency_ms": round(latency_ms, 2),
-            "state_keys": state_keys,
-            "request_id": request_id_var.get(""),
-            "user_id": user_id_var.get(""),
         },
     )
 
@@ -98,11 +81,10 @@ def log_graph_execution(graph_name: str, latency_ms: float, state_keys: list[str
 class TracingMiddleware(BaseHTTPMiddleware):
     """Attach a unique request ID and timing to every request."""
 
-    SKIP_PATHS = frozenset({"/api/health", "/docs", "/openapi.json", "/redoc"})
-
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         rid = str(uuid.uuid4())
         request_id_var.set(rid)
+        request.state.request_id = rid
 
         start = time.perf_counter()
         response = await call_next(request)
@@ -111,7 +93,7 @@ class TracingMiddleware(BaseHTTPMiddleware):
         response.headers["X-Request-ID"] = rid
         response.headers["X-Response-Time-Ms"] = str(round(elapsed_ms, 2))
 
-        if request.url.path not in self.SKIP_PATHS:
+        if request.url.path not in SKIP_PATHS:
             metrics.inc("total_requests")
             metrics.observe("request_latency_ms", elapsed_ms)
 
@@ -125,30 +107,3 @@ class TracingMiddleware(BaseHTTPMiddleware):
             )
 
         return response
-
-
-# ── Function-level tracing decorator ─────────────────────────────────────────
-
-
-def trace_function(name: str | None = None):
-    """Decorator that logs start/end and timing for any async function."""
-
-    def decorator(func):
-        func_name = name or f"{func.__module__}.{func.__qualname__}"
-
-        async def wrapper(*args, **kwargs):
-            start = time.perf_counter()
-            try:
-                result = await func(*args, **kwargs)
-                elapsed = (time.perf_counter() - start) * 1000
-                log_event("function_end", function=func_name, latency_ms=round(elapsed, 2), success=True)
-                return result
-            except Exception as exc:
-                elapsed = (time.perf_counter() - start) * 1000
-                log_event("function_end", function=func_name, latency_ms=round(elapsed, 2), success=False, error=str(exc))
-                raise
-
-        wrapper.__wrapped__ = func  # type: ignore[attr-defined]
-        return wrapper
-
-    return decorator

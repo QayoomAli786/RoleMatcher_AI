@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Literal
 
 from langgraph.graph import END, START, StateGraph
 
@@ -348,19 +347,6 @@ async def synthesize_plan_node(state: CareerState) -> dict:
     return {"plan": plan_dict}
 
 
-async def error_node(state: CareerState) -> dict:
-    """Handle pipeline errors."""
-    logger.error("Career pipeline failed for user=%s", state.get("user_id"))
-    return {"plan": CareerPlan().model_dump()}
-
-
-# ── Routing ───────────────────────────────────────────────────────────────────
-
-
-def route_after_gaps(state: CareerState) -> str:
-    return "generate_full_roadmap"
-
-
 # ── Graph ──────────────────────────────────────────────────────────────────────
 
 
@@ -373,19 +359,13 @@ def build_career_graph() -> StateGraph:
     graph.add_node("identify_gaps", identify_gaps_node)
     graph.add_node("generate_full_roadmap", generate_full_roadmap_node)
     graph.add_node("synthesize_plan", synthesize_plan_node)
-    graph.add_node("error_node", error_node)
 
     graph.add_edge(START, "analyze_current_state")
     graph.add_edge("analyze_current_state", "analyze_market")
     graph.add_edge("analyze_market", "identify_gaps")
-    graph.add_conditional_edges(
-        "identify_gaps",
-        route_after_gaps,
-        {"generate_full_roadmap": "generate_full_roadmap", "error_node": "error_node"},
-    )
+    graph.add_edge("identify_gaps", "generate_full_roadmap")
     graph.add_edge("generate_full_roadmap", "synthesize_plan")
     graph.add_edge("synthesize_plan", END)
-    graph.add_edge("error_node", END)
 
     return graph
 

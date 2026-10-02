@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.core.schemas import UserProfile
-from backend.core.store import _career_plans, get_resume, get_generic, list_generic, store_generic
-from backend.graphs.orchestrator import run_career_pipeline
+from backend.core.store import _career_plans, get_resume, list_generic, store_generic
+from backend.graphs.career_graph import career_pipeline
 from backend.security.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -40,11 +39,16 @@ async def generate_plan(body: _PlanBody, user: UserProfile = Depends(get_current
             resume_profile = resume.parsed_profile
 
     try:
-            result = await run_career_pipeline(
-            user_id=user.id,
-            resume_id=resume_id or uuid.UUID("00000000-0000-0000-0000-000000000000"),
-            target_role=target,
-            resume_profile=resume_profile or {},
+        result = await career_pipeline.ainvoke(
+            {
+                "user_id": user.id,
+                "resume_id": resume_id or uuid.UUID("00000000-0000-0000-0000-000000000000"),
+                "target_role": target,
+                "resume_profile": resume_profile or {},
+                "skill_gaps": [],
+                "market_data": {},
+                "plan": {},
+            }
         )
     except Exception as exc:
         logger.error("Career pipeline failed: %s", exc)

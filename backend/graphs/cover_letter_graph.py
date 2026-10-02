@@ -20,46 +20,6 @@ logger = logging.getLogger(__name__)
 _router = ModelRouter()
 
 
-def _fallback_cover_letter(state: CoverLetterState) -> str:
-    """Deterministic cover letter template used when the LLM is unavailable."""
-    profile = state.get("resume_profile", {})
-    job_title = state.get("job_title", "the position")
-    company = state.get("company_name", "your company")
-
-    skills = [s.get("name", "") for s in profile.get("skills", []) if isinstance(s, dict)][:8]
-    highlights = profile.get("_experience_highlights", [])
-    summary = profile.get("_summary", "")
-
-    body = (
-        f"Dear Hiring Manager,\n\n"
-        f"I am writing to express my strong interest in the {job_title} position at {company}. "
-    )
-    if summary:
-        body += f"With my background, I bring a proven ability to deliver results. {summary.strip()} "
-    else:
-        body += "I bring a track record of delivering results and a genuine passion for this work. "
-
-    if highlights:
-        body += "\n\nThroughout my career, I have:\n"
-        for h in highlights[:3]:
-            body += f"- {h}\n"
-
-    if skills:
-        body += f"\nMy key strengths include {', '.join(skills)}. "
-        body += "I apply these skills to solve real problems and drive measurable outcomes for the team."
-
-    body += (
-        "\n\nI am particularly drawn to this role because it aligns with my professional goals "
-        "and I am confident I can contribute meaningfully from day one. "
-        "I would welcome the opportunity to discuss how my experience can benefit your team "
-        f"in an interview.\n\n"
-        f"Thank you for your time and consideration.\n\n"
-        f"Sincerely,\n"
-        f"[Your Name]"
-    )
-    return body
-
-
 # ── Nodes ──────────────────────────────────────────────────────────────────────
 
 
@@ -214,12 +174,6 @@ async def refine_tone_node(state: CoverLetterState) -> dict:
         return {}
 
 
-async def error_node(state: CoverLetterState) -> dict:
-    """Handle pipeline errors."""
-    logger.error("Cover letter pipeline failed for user=%s", state.get("user_id"))
-    return {"error": "Cover letter generation failed. Please try again."}
-
-
 # ── Graph ──────────────────────────────────────────────────────────────────────
 
 
@@ -231,14 +185,12 @@ def build_cover_letter_graph() -> StateGraph:
     graph.add_node("analyze_job", analyze_job_node)
     graph.add_node("generate_cover_letter", generate_cover_letter_node)
     graph.add_node("refine_tone", refine_tone_node)
-    graph.add_node("error_node", error_node)
 
     graph.add_edge(START, "analyze_resume")
     graph.add_edge("analyze_resume", "analyze_job")
     graph.add_edge("analyze_job", "generate_cover_letter")
     graph.add_edge("generate_cover_letter", "refine_tone")
     graph.add_edge("refine_tone", END)
-    graph.add_edge("error_node", END)
 
     return graph
 

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.core.schemas import UserProfile
@@ -18,7 +17,7 @@ from backend.core.store import (
     store_generic,
     get_generic,
 )
-from backend.graphs.orchestrator import run_job_pipeline
+from backend.graphs.job_graph import job_pipeline
 from backend.security.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -92,12 +91,21 @@ async def search_jobs(
         target = "software engineer"
 
     try:
-        result = await run_job_pipeline(
-            user_id=user.id,
-            resume_id=resume_id or uuid.UUID("00000000-0000-0000-0000-000000000000"),
-            target_role=target,
-            resume_profile=resume_profile or {},
-            user_location=body.location or "All Countries",
+        result = await job_pipeline.ainvoke(
+            {
+                "user_id": user.id,
+                "resume_id": resume_id or uuid.UUID("00000000-0000-0000-0000-000000000000"),
+                "target_role": target,
+                "user_location": body.location or "All Countries",
+                "resume_profile": resume_profile or {},
+                "query_keywords": [],
+                "source_results": {},
+                "normalized_jobs": [],
+                "deduplicated_jobs": [],
+                "candidate_jobs": [],
+                "matched_jobs": [],
+                "recommendations": [],
+            }
         )
     except Exception as exc:
         logger.error("Job pipeline failed: %s", exc)

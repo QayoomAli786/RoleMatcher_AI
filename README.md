@@ -43,7 +43,7 @@ Users bring their own API key (Gemini, OpenAI, Groq, DeepSeek, or Qwen) via the 
 | Feature | Description |
 |---|---|
 | **Resume Parsing** | PDF/DOCX extraction into structured profiles with skill detection |
-| **Multi-Source Job Discovery** | Aggregates listings from LinkedIn, Remotive, and Jobicy with deduplication |
+| **Multi-Source Job Discovery** | Aggregates listings from LinkedIn, RemoteOK, and Adzuna with deduplication |
 | **Skill-Based Job Matching** | Multi-factor scoring: skill overlap, experience, seniority, location, salary, and semantic similarity |
 | **ATS Compatibility Scoring** | Keyword coverage, skill gaps, experience alignment, and LLM-powered recommendations |
 | **Strategic Career Planning** | Skill gap analysis, market intelligence, learning roadmaps, and action plans |
@@ -61,12 +61,11 @@ Users bring their own API key (Gemini, OpenAI, Groq, DeepSeek, or Qwen) via the 
 - **Framework**: [FastAPI](https://fastapi.tiangolo.com/) (Python 3.11+)
 - **AI Orchestration**: [LangGraph](https://langchain-ai.github.io/langgraph/) — stateful graph workflows
 - **LLM Integration**: [LangChain](https://www.langchain.com/) — `ChatGoogleGenerativeAI`, `ChatOpenAI`, `ChatGroq` for per-provider model routing
-- **LLM Fallback**: [LiteLLM](https://docs.litellm.ai/) — provider-aware model fallback
-- **Database**: SQLite (in-memory store for demo; PostgreSQL-ready via SQLAlchemy 2.0)
+- **Store**: In-memory stores (guest-user demo; no database layer)
 - **Auth**: Guest user auth with `X-API-Key` / `X-Model` per-request headers
 - **Resume Parsing**: PyMuPDF, python-docx
 - **Scraping**: HTTPX, BeautifulSoup4
-- **ML**: scikit-learn (skill matching, embeddings)
+- **Numerics**: NumPy (TF-IDF embeddings, similarity)
 
 ### Frontend — UI/UX
 - **Styling**: Custom CSS with glassmorphism design system
@@ -90,40 +89,33 @@ CareerCopilot_AI/
 │   ├── main.py                  # App entrypoint, CORS, static files, middleware
 │   ├── core/
 │   │   ├── config.py            # Pydantic settings (env-driven)
-│   │   ├── models.py            # SQLAlchemy ORM models
 │   │   ├── schemas.py           # Pydantic request/response schemas
 │   │   ├── state.py             # LangGraph TypedDict state definitions
-│   │   ├── store.py             # In-memory data store
-│   │   └── types.py             # Shared type definitions
+│   │   └── store.py             # In-memory data store
 │   │
 │   ├── graphs/                  # LangGraph workflow definitions
-│   │   ├── orchestrator.py      # Pipeline registry & full-pipeline coordinator
-│   │   ├── resume_graph.py      # Resume parsing workflow
 │   │   ├── job_graph.py         # Job discovery & matching workflow
 │   │   ├── ats_graph.py         # ATS scoring workflow
 │   │   ├── career_graph.py      # Career planning workflow
-│   │   ├── interview_graph.py   # Interview prep workflow
 │   │   ├── cover_letter_graph.py# Cover letter generation workflow
+│   │   ├── resume_optimizer_graph.py # Resume tailoring workflow
 │   │   └── chat_graph.py        # Conversational AI workflow
 │   │
 │   ├── services/                # Deterministic & LLM-powered services
 │   │   ├── resume_parser.py     # PDF/DOCX -> structured profile
 │   │   ├── job_normalizer.py    # Raw job data normalization
 │   │   ├── job_deduplicator.py  # Cross-source deduplication
-│   │   ├── skill_matcher.py     # Multi-factor skill matching
 │   │   ├── skill_aliases.py     # Skill name normalization
 │   │   ├── skill_gap_engine.py  # Gap analysis & learning paths
 │   │   ├── ats_engine.py        # Deterministic ATS scoring
 │   │   ├── market_analyzer.py   # Market intelligence aggregation
 │   │   ├── embeddings.py        # Vector embedding service
-│   │   ├── cache.py             # In-memory caching
-│   │   ├── llm_service.py       # LangChain model factory, fallback, cost tracking
+│   │   ├── llm_service.py       # LangChain model factory, routing & metrics
 │   │   └── job_sources/         # Job board integrations
 │   │       ├── base.py          # Abstract source interface
 │   │       ├── linkedin.py      # LinkedIn Guest API
-│   │       ├── remotive.py      # Remotive Public API
-│   │       ├── jobicy.py        # Jobicy Public API
-│   │       ├── generic_scraper.py
+│   │       ├── adzuna.py        # Adzuna API
+│   │       ├── remoteok.py      # RemoteOK API
 │   │       └── manager.py       # Source orchestrator
 │   │
 │   ├── api/                     # FastAPI route handlers
@@ -148,10 +140,6 @@ CareerCopilot_AI/
 │   ├── observability/           # Monitoring & tracing
 │   │   ├── tracing.py           # Request tracing middleware
 │   │   └── metrics.py           # In-memory metrics collector
-│   │
-│   └── db/                      # Database layer
-│       ├── session.py           # Async session management
-│       └── migrations.py        # Alembic migration helpers
 │
 ├── frontend/                    # Static Web Interface
 │   ├── index.html               # Glassmorphic UI shell
@@ -189,7 +177,7 @@ CareerCopilot_AI/
 </td>
 <td width="33%" align="center">
 <h3>Job Matcher</h3>
-<p>Aggregates from LinkedIn, Remotive, and Jobicy. Normalizes, deduplicates, and scores matches using skill overlap and semantic similarity.</p>
+<p>Aggregates from LinkedIn, RemoteOK, and Adzuna. Normalizes, deduplicates, and scores matches using skill overlap and semantic similarity.</p>
 </td>
 <td width="33%" align="center">
 <h3>ATS Analyzer</h3>
@@ -306,7 +294,7 @@ docker run -d -p 8000:8000 --name career-copilot \
 ## Roadmap
 
 - [x] Resume parsing with skill detection
-- [x] Multi-source job aggregation (LinkedIn, Remotive, Jobicy)
+- [x] Multi-source job aggregation (LinkedIn, RemoteOK, Adzuna)
 - [x] Skill-based job matching with scoring
 - [x] ATS compatibility analysis
 - [x] Career planning with skill gap analysis

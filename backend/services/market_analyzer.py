@@ -6,30 +6,7 @@ import math
 from collections import Counter
 
 from backend.core.schemas import Job, MarketSnapshot
-
-# ── Skill Normalization ───────────────────────────────────────────────────────
-
-_TECH_ALIASES: dict[str, str] = {
-    "js": "javascript", "ts": "typescript", "py": "python",
-    "react.js": "react", "reactjs": "react", "react js": "react",
-    "vue.js": "vue", "vuejs": "vue", "angular.js": "angular",
-    "angularjs": "angular", "node.js": "node", "nodejs": "node",
-    "next.js": "next.js", "nextjs": "next.js",
-    "golang": "go", "c sharp": "c#", "c plus plus": "c++",
-    "postgres": "postgresql", "mongo": "mongodb", "dynamo": "dynamodb",
-    "k8s": "kubernetes", "tf": "tensorflow", "pt": "pytorch",
-    "sklearn": "scikit-learn", "gcp": "google cloud",
-    "tailwind css": "tailwindcss", "material ui": "material-ui",
-    "fast api": "fastapi", "spring boot": "spring boot",
-    "open ai": "openai", "hugging face": "huggingface",
-    "apache spark": "spark", "apache kafka": "kafka",
-}
-
-
-def _norm_skill(s: str) -> str:
-    s = s.strip().lower()
-    return _TECH_ALIASES.get(s, s)
-
+from backend.services.skill_aliases import normalize_skill
 
 # ── Analysis ──────────────────────────────────────────────────────────────────
 
@@ -51,7 +28,7 @@ def analyze_market(jobs: list[Job], target_role: str = "") -> MarketSnapshot:
     for job in jobs:
         seen: set[str] = set()
         for s in job.skills:
-            ns = _norm_skill(s)
+            ns = normalize_skill(s)
             if ns not in seen:
                 skill_counter[ns] += 1
                 seen.add(ns)

@@ -76,10 +76,11 @@ function navigateTo(section) {
         if (overlay) overlay.classList.remove('hidden');
         section = 'settings';
     }
+    const target = document.getElementById(`section-${section}`);
+    if (!target) return;
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-    const target = document.getElementById(`section-${section}`);
-    if (target) target.classList.add('active');
+    target.classList.add('active');
     const navLink = document.querySelector(`.nav-link[data-section="${section}"]`);
     if (navLink) navLink.classList.add('active');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -202,7 +203,6 @@ function initResume() {
         if (e.target.files.length) uploadResume(e.target.files[0]);
     });
 
-    document.getElementById('analyze-ats-btn')?.addEventListener('click', analyzeATS);
     document.getElementById('delete-resume-btn').addEventListener('click', deleteResume);
 }
 
@@ -243,20 +243,6 @@ async function uploadResume(file) {
     } catch (err) {
         hideLoading();
         showToast('Upload failed: ' + err.message, 'error');
-    }
-}
-
-async function analyzeATS() {
-    if (!resumeData) return showToast('Upload a resume first', 'error');
-    showLoading('Analyzing ATS score...');
-    try {
-        // ATS analysis requires a job_id — disabled until job matching is wired up
-        showToast('Select a job first to run ATS analysis', 'info');
-        hideLoading();
-        return;
-    } catch (err) {
-        hideLoading();
-        showToast('Analysis failed', 'error');
     }
 }
 
@@ -412,7 +398,7 @@ function renderJobs() {
             </div>` : ''}
             ${desc ? `<div class="job-desc">${desc.slice(0, 200)}${desc.length > 200 ? '...' : ''}</div>` : ''}
             <div class="job-actions">
-                ${resumeData?.resume_id ? `<button class="btn btn-primary btn-sm" onclick="analyzeJob(${i})"><i class="fas fa-clipboard-check"></i> ATS</button>` : `<button class="btn btn-ghost btn-sm" onclick="showToast('Upload a resume first to run ATS analysis', 'info')" title="Upload a resume first"><i class="fas fa-clipboard-check"></i> ATS</button>`}
+                ${resumeData?.resume_id ? `<button class="btn btn-primary btn-sm" onclick="analyzeJob(${i})"><i class="fas fa-clipboard-check"></i> ATS</button>` : `<button class="btn btn-primary btn-sm" onclick="showToast('Upload a resume first to run ATS analysis', 'info')" title="Upload a resume first"><i class="fas fa-clipboard-check"></i> ATS</button>`}
                 ${resumeData?.resume_id ? `<button class="btn btn-tailor btn-sm" onclick="tailorResume(${i})"><i class="fas fa-wand-magic-sparkles"></i> AI Resume Builder</button>` : `<button class="btn btn-tailor btn-sm" onclick="showToast('Upload a resume first to build your AI resume', 'info')" title="Upload a resume first"><i class="fas fa-wand-magic-sparkles"></i> AI Resume Builder</button>`}
                 <a class="btn btn-primary btn-sm job-apply-link" href="${job.source_url || `https://www.google.com/search?q=${encodeURIComponent((job.title || '') + ' ' + (job.company || '') + ' job apply')}`}" target="_blank" rel="noopener"><i class="fas fa-external-link-alt"></i> Apply Now</a>
             </div>
@@ -1396,6 +1382,7 @@ function renderInterviewQuestion(index) {
     const container = document.getElementById('interview-questions');
     const q = interviewSession.questions[index];
     if (!q) return;
+    currentQuestionIndex = index;
     const total = interviewSession.total_questions || interviewSession.questions.length;
     const progress = Math.round((index / total) * 100);
     container.innerHTML = `
@@ -1596,9 +1583,10 @@ function resetInterview() {
 let clMode = 'form';
 
 function initCoverLetter() {
-    document.querySelectorAll('.cl-tone-btn').forEach(btn => {
+    const toneBtns = document.querySelectorAll('#section-cover-letter .cl-tone-btn');
+    toneBtns.forEach(btn => {
         btn.addEventListener('click', () => {
-            document.querySelectorAll('.cl-tone-btn').forEach(b => b.classList.remove('active'));
+            toneBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
         });
     });
@@ -1611,7 +1599,7 @@ function initCoverLetter() {
 
 function setClMode(mode) {
     clMode = mode;
-    document.querySelectorAll('.cl-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    document.querySelectorAll('#section-cover-letter .cl-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
     document.getElementById('cl-form-fields').classList.toggle('hidden', mode !== 'form');
     document.getElementById('cl-resume-hint').classList.toggle('hidden', mode !== 'resume');
     if (mode === 'resume') {
@@ -1630,7 +1618,7 @@ async function generateCoverLetter() {
     const company = document.getElementById('cl-company').value.trim();
     const role = document.getElementById('cl-role').value.trim();
     const jobDesc = document.getElementById('cl-job-desc').value.trim();
-    const tone = document.querySelector('.cl-tone-btn.active')?.dataset.tone || 'professional';
+    const tone = document.querySelector('#section-cover-letter .cl-tone-btn.active')?.dataset.tone || 'professional';
 
     const payload = { tone };
     if (clMode === 'resume') {

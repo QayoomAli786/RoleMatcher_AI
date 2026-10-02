@@ -15,7 +15,7 @@ from typing import Literal
 
 from langgraph.graph import END, START, StateGraph
 
-from backend.core.schemas import Job, JobMatch, ResumeProfile
+from backend.core.schemas import Job, JobMatch
 from backend.core.state import JobState
 from backend.services.embeddings import (
     batch_embed,
@@ -23,11 +23,7 @@ from backend.services.embeddings import (
     get_embedding_service,
 )
 from backend.services.job_deduplicator import deduplicate
-from backend.services.job_normalizer import (
-    extract_skills_from_description,
-    normalize_generic_job,
-    normalize_linkedin_job,
-)
+from backend.services.job_normalizer import extract_skills_from_description
 from backend.services.job_sources.manager import JobSourceManager
 from backend.services.llm_service import ModelRouter, TaskCategory
 
@@ -97,32 +93,14 @@ async def collect_from_sources_node(state: JobState) -> dict:
 
 
 async def normalize_jobs_node(state: JobState) -> dict:
-    """Normalize raw job listings from each source into Job schema.
+    """Pass the sources' already-normalized Job dicts through.
 
-    Sources already return normalized ``Job`` objects — those are passed
-    through unchanged so fields like ``source_url`` are preserved. Only truly
-    raw listings get run through the source normalizer.
+    Every connector returns ``Job`` objects (see ``AbstractJobSource._fetch_raw``)
+    and ``collect_from_sources_node`` dumps them to dicts, so there is nothing
+    left to normalise — this node keeps the pipeline stage explicit.
     """
     raw_results = state.get("source_results", {})
-    normalized: list[dict] = []
-
-    normalizers = {
-        "linkedin": normalize_linkedin_job,
-    }
-
-    for source_name, raw_jobs in raw_results.items():
-        normalizer = normalizers.get(source_name, normalize_generic_job)
-        for raw in raw_jobs:
-            try:
-                if isinstance(raw, dict) and raw.get("created_at") is not None:
-                    normalized.append(raw)
-                    continue
-                job = normalizer(raw)
-                normalized.append(job.model_dump())
-            except Exception as exc:
-                logger.warning("Failed to normalize job from %s: %s", source_name, exc)
-
-    return {"normalized_jobs": normalized}
+    return {"normalized_jobs": [job for jobs in raw_results.values() for job in jobs]}
 
 
 async def deduplicate_node(state: JobState) -> dict:

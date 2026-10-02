@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
 import unicodedata
@@ -145,14 +144,6 @@ SKILLS_DB: set[str] = {
     "graphql", "rest", "grpc", "soap", "websocket", "sse",
 }
 
-# ── Skill Alias Map (shared) ────────────────────────────────────────────────
-
-from backend.services.skill_aliases import SKILL_ALIASES as _SKILL_ALIASES, normalize_skill
-
-# Keep local alias for backward compatibility within this module
-_SKILL_ALIASES_MAP = _SKILL_ALIASES
-
-
 # ── Text Cleaning ─────────────────────────────────────────────────────────────
 
 def _clean_text(text: str) -> str:
@@ -160,41 +151,8 @@ def _clean_text(text: str) -> str:
     text = unicodedata.normalize("NFKD", text)
     text = text.encode("utf-8", errors="replace").decode("utf-8")
     text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"\n{3+}", "\n\n", text)
     return text.strip()
-
-
-def _normalize_skill(raw: str) -> str:
-    """Normalize a skill string."""
-    return normalize_skill(raw)
-
-
-# ── PDF Extraction ────────────────────────────────────────────────────────────
-
-def _extract_pdf(file_path: str | Path) -> str:
-    """Extract text from PDF using PyMuPDF."""
-    try:
-        import fitz  # type: ignore[import-untyped]
-
-        doc = fitz.open(str(file_path))
-        pages = [page.get_text() for page in doc]
-        doc.close()
-        return "\n".join(pages)
-    except ImportError:
-        logger.warning("PyMuPDF not installed; falling back to PyPDF2")
-        return _extract_pdf_fallback(file_path)
-
-
-def _extract_pdf_fallback(file_path: str | Path) -> str:
-    """Fallback PDF extraction using PyPDF2."""
-    try:
-        from PyPDF2 import PdfReader  # type: ignore[import-untyped]
-
-        reader = PdfReader(str(file_path))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
-    except Exception as e:
-        logger.error("PDF extraction failed: %s", e)
-        return ""
 
 
 # ── In-memory extraction (uploaded bytes, no temp file) ──────────────────────
@@ -224,20 +182,12 @@ def _extract_docx_bytes(content: bytes) -> str:
 
 def _extract_pdf_bytes(content: bytes) -> str:
     try:
-        import io
+        import fitz  # type: ignore[import-untyped]
 
-        try:
-            import fitz  # type: ignore[import-untyped]
-
-            doc = fitz.open(stream=content, filetype="pdf")
-            text = "\n".join(page.get_text() for page in doc)
-            doc.close()
-            return text
-        except ImportError:
-            from PyPDF2 import PdfReader  # type: ignore[import-untyped]
-
-            reader = PdfReader(io.BytesIO(content))
-            return "\n".join(page.extract_text() or "" for page in reader.pages)
+        doc = fitz.open(stream=content, filetype="pdf")
+        text = "\n".join(page.get_text() for page in doc)
+        doc.close()
+        return text
     except Exception as e:
         logger.error("PDF extraction failed: %s", e)
         return ""
@@ -254,31 +204,6 @@ def extract_text_from_bytes(content: bytes, filename: str = "") -> str:
     if ext == ".pdf":
         return _extract_pdf_bytes(content)
     return content.decode("utf-8", errors="replace")
-
-
-# ── DOCX Extraction ───────────────────────────────────────────────────────────
-
-def _extract_docx(file_path: str | Path) -> str:
-    """Extract text from DOCX using python-docx."""
-    try:
-        from docx import Document  # type: ignore[import-untyped]
-
-        doc = Document(str(file_path))
-        return _docx_text(doc)
-    except Exception as e:
-        logger.error("DOCX extraction failed: %s", e)
-        return ""
-
-
-# ── Content Hash ──────────────────────────────────────────────────────────────
-
-def compute_file_hash(file_path: str | Path) -> str:
-    """SHA-256 hash of file bytes."""
-    h = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 # ── Section Detection ─────────────────────────────────────────────────────────
@@ -589,43 +514,13 @@ def _build_profile(text: str) -> ResumeProfile:
     )
 
 
-def parse_resume_from_text(raw_text: str, *, content_hash: str = "", skip_cache: bool = False) -> ResumeProfile:
+def parse_resume_from_text(raw_text: str, *, content_hash: str = "") -> ResumeProfile:
     """Parse a resume from raw text (e.g. already stored in DB)."""
-    if not skip_cache and content_hash and content_hash in _parse_cache:
+    if content_hash and content_hash in _parse_cache:
         return _parse_cache[content_hash]
 
     profile = _build_profile(raw_text)
 
     if content_hash:
         _parse_cache[content_hash] = profile
-    return profile
-
-
-def parse_resume(file_path: str | Path, *, skip_cache: bool = False) -> ResumeProfile:
-    """
-    Parse a resume file (PDF or DOCX) into a structured ResumeProfile.
-
-    Uses content-hash caching to skip re-parsing identical files.
-    """
-    file_path = Path(file_path)
-    if not file_path.exists():
-        raise FileNotFoundError(f"Resume not found: {file_path}")
-
-    file_hash = compute_file_hash(file_path)
-
-    if not skip_cache and file_hash in _parse_cache:
-        return _parse_cache[file_hash]
-
-    ext = file_path.suffix.lower()
-    if ext == ".pdf":
-        raw_text = _extract_pdf(file_path)
-    elif ext in (".docx", ".doc"):
-        raw_text = _extract_docx(file_path)
-    elif ext == ".txt":
-        raw_text = file_path.read_text(encoding="utf-8", errors="replace")
-    else:
-        raise ValueError(f"Unsupported file type: {ext}")
-
-    profile = _build_profile(raw_text)
-    _parse_cache[file_hash] = profile
     return profile

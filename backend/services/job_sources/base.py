@@ -6,7 +6,7 @@ import abc
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from backend.core.schemas import Job
 
@@ -24,15 +24,6 @@ class SourceConfig:
     timeout_seconds: float = 30.0
     max_retries: int = 3
     max_concurrency: int = 5
-
-
-class SourceError(Exception):
-    """Raised when a job source fails."""
-
-    def __init__(self, source_name: str, message: str, cause: Exception | None = None):
-        self.source_name = source_name
-        self.cause = cause
-        super().__init__(f"[{source_name}] {message}")
 
 
 class AbstractJobSource(abc.ABC):
@@ -93,19 +84,9 @@ class AbstractJobSource(abc.ABC):
             await asyncio.sleep(delay)
 
         self._failure_count += 1
-        raise SourceError(
-            self.config.name,
-            f"failed after {self.config.max_retries} attempts",
-            cause=last_exc,
+        raise RuntimeError(
+            f"[{self.config.name}] failed after {self.config.max_retries} attempts: {last_exc}"
         )
-
-    async def health_check(self) -> bool:
-        """Return True if the source responds to a lightweight probe."""
-        try:
-            await self.fetch("test", limit=1)
-            return True
-        except Exception:
-            return False
 
     # ── Subclass hooks ─────────────────────────────────────────────────────
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -17,7 +16,7 @@ from backend.core.store import (
     save_conversation,
     delete_conversation as _del_conversation,
 )
-from backend.graphs.orchestrator import run_chat_pipeline
+from backend.graphs.chat_graph import chat_pipeline
 from backend.security.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -43,11 +42,16 @@ async def send_message(body: _ChatBody, user: UserProfile = Depends(get_current_
 
     # Run the chat pipeline for a real LLM response
     try:
-        result = await run_chat_pipeline(
-            user_id=user.id,
-            conversation_id=conv_id,
-            message=body.message,
-            context={"conversation_history": conv.messages[-8:]},
+        result = await chat_pipeline.ainvoke(
+            {
+                "user_id": user.id,
+                "conversation_id": conv_id,
+                "message": body.message,
+                "context": {"conversation_history": conv.messages[-8:]},
+                "tools_used": [],
+                "response": "",
+                "messages": [],
+            }
         )
         reply = result.get("response", "I'm not sure how to help with that yet.")
     except Exception as exc:
