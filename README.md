@@ -74,14 +74,7 @@ Users bring their own API key (Gemini, OpenAI, Groq, DeepSeek, or Qwen) through 
 - **Styling**: Custom CSS design system — glassmorphism, micro-animations, backdrop filters, particles, dark mode
 - **Markdown**: marked.js for career plan and feedback rendering
 - **Export**: Vendored jsPDF for client-side PDF export
-
-### Infrastructure
-
-- **Hosting**: [AWS EC2](https://aws.amazon.com/ec2/) — a single Uvicorn process serves both the API and the static frontend
-- **Dependencies**: pip + `requirements.txt`
-
 ---
-
 ## Project Architecture
 
 ```
