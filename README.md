@@ -23,7 +23,7 @@
 
 *Stop applying blindly. Start landing interviews.*
 
-
+</div>
 ---
 
 ## Overview
@@ -33,7 +33,7 @@
 Users bring their own API key (Gemini, OpenAI, Groq, DeepSeek, or Qwen) through the Settings panel — no server-side key is required.
 
 > **No more spray-and-pray applications. Just targeted, data-driven career moves.**
-</div>
+
 ---
 
 ## Features
