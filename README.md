@@ -33,7 +33,7 @@
 
 ## Overview
 
-**CareerCopilot AI** (also branded *RoleMatcherAi*) is a multi-workflow AI system that automates every stage of the modern job search. Built on **LangGraph** and **LangChain**, it runs six specialized workflows — **Resume Parser**, **Job Matcher**, **ATS Analyzer**, **Career Strategist**, **Interview Coach**, and **Chat Assistant** — that collaborate through shared state to source relevant roles, optimize your resume, and produce a personalized career roadmap.
+**RoleMatcher AI** is a multi-workflow AI system that automates every stage of the modern job search. Built on **LangGraph** and **LangChain**, it runs six specialized workflows — **Resume Parser**, **Job Matcher**, **ATS Analyzer**, **Career Strategist**, **Interview Coach**, and **Chat Assistant** — that collaborate through shared state to source relevant roles, optimize your resume, and produce a personalized career roadmap.
 
 Users bring their own API key (Gemini, OpenAI, Groq, DeepSeek, or Qwen) through the Settings panel — no server-side key is required.
 
