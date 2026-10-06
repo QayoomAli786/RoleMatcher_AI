@@ -41,11 +41,18 @@ class AbstractJobSource(abc.ABC):
 
     # ── Public API ─────────────────────────────────────────────────────────
 
-    async def fetch(self, query: str, limit: int = 25) -> list[Job]:
+    async def fetch(
+        self,
+        query: str,
+        limit: int = 25,
+        location: str = "",
+        work_mode: str = "any",
+    ) -> list[Job]:
         """Fetch jobs with retry, timeout, and rate-limit handling.
 
         Delegates to `_fetch_raw` for the actual HTTP call, then runs
-        the source-specific normaliser.
+        the source-specific normaliser. ``location`` / ``work_mode`` are
+        optional structured filters that individual sources may use.
         """
         if not self.config.enabled:
             logger.info("%s is disabled — skipping", self.config.name)
@@ -56,7 +63,7 @@ class AbstractJobSource(abc.ABC):
             try:
                 await self._apply_rate_limit()
                 result = await asyncio.wait_for(
-                    self._fetch_raw(query, limit),
+                    self._fetch_raw(query, limit, location, work_mode),
                     timeout=self.config.timeout_seconds,
                 )
                 self._consecutive_failures = 0
@@ -91,7 +98,9 @@ class AbstractJobSource(abc.ABC):
     # ── Subclass hooks ─────────────────────────────────────────────────────
 
     @abc.abstractmethod
-    async def _fetch_raw(self, query: str, limit: int) -> list[Job]:
+    async def _fetch_raw(
+        self, query: str, limit: int, location: str = "", work_mode: str = "any"
+    ) -> list[Job]:
         """Perform the actual HTTP call and return normalised Job objects."""
         ...
 

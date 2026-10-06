@@ -107,6 +107,10 @@ def _merge_into(target: Job, source: Job) -> None:
         target.source_url = source.source_url
     if not target.location and source.location:
         target.location = source.location
+    if target.work_mode == "onsite" and source.work_mode in ("remote", "hybrid"):
+        # explicit remote/hybrid signal is more informative than the default
+        target.work_mode = source.work_mode
+        target.remote = target.remote or source.work_mode == "remote"
     if not target.employment_type and source.employment_type:
         target.employment_type = source.employment_type
     if not target.seniority and source.seniority:

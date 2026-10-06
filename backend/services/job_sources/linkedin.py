@@ -44,10 +44,16 @@ class LinkedInSource(AbstractJobSource):
             "Accept-Language": "en-US,en;q=0.9",
         }
 
-    async def _fetch_raw(self, query: str, limit: int) -> list[Job]:
+    async def _fetch_raw(
+        self, query: str, limit: int, location: str = "", work_mode: str = "any"
+    ) -> list[Job]:
         all_jobs: list[Job] = []
         batch_size = 25
         start = 0
+
+        # NOTE: the guest API ignores f_WT (workplace type) — verified identical
+        # results for any/hybrid/remote. Work mode is guaranteed by the
+        # pipeline's filter_candidates_node instead.
 
         async with httpx.AsyncClient(headers=self._headers, follow_redirects=True) as client:
             while start < limit:
@@ -56,6 +62,8 @@ class LinkedInSource(AbstractJobSource):
                     "start": start,
                     "sortBy": "DD",
                 }
+                if location:
+                    params["location"] = location
                 try:
                     resp = await client.get(LINKEDIN_SEARCH_URL, params=params)
                     resp.raise_for_status()

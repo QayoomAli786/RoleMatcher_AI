@@ -37,7 +37,12 @@ class RemoteOKSource(AbstractJobSource):
             "User-Agent": "CareerCopilot/1.0 (https://careercopilot.ai)",
         }
 
-    async def _fetch_raw(self, query: str, limit: int) -> list[Job]:
+    async def _fetch_raw(
+        self, query: str, limit: int, location: str = "", work_mode: str = "any"
+    ) -> list[Job]:
+        if work_mode in ("onsite", "hybrid"):
+            # Remote-only feed — every result would be dropped by the filter
+            return []
         async with httpx.AsyncClient(headers=self._headers, follow_redirects=True) as client:
             resp = await client.get(REMOTEOK_API_URL)
             resp.raise_for_status()
@@ -85,7 +90,7 @@ class RemoteOKSource(AbstractJobSource):
             skills = []
 
         location = raw.get("location", "") or "Remote"
-        is_remote = "remote" in location.lower() or raw.get("remote", False)
+        is_remote = True  # remote-only feed
 
         # Parse salary from description if available
         salary_min = None
@@ -112,6 +117,7 @@ class RemoteOKSource(AbstractJobSource):
             company=company,
             location=location,
             remote=is_remote,
+            work_mode="remote",
             description=desc,
             skills=skills,
             salary_min=salary_min,

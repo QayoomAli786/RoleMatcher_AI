@@ -53,8 +53,13 @@ class AdzunaSource(AbstractJobSource):
         self._app_id = app_id
         self._app_key = app_key
 
-    async def _fetch_raw(self, query: str, limit: int) -> list[Job]:
+    async def _fetch_raw(
+        self, query: str, limit: int, location: str = "", work_mode: str = "any"
+    ) -> list[Job]:
         if not self._app_id or not self._app_key:
+            return []
+        if work_mode == "remote":
+            # Adzuna (physical listings, no remote filter) can't serve remote-only
             return []
 
         # Search US market by default; can be extended to other countries
@@ -68,6 +73,8 @@ class AdzunaSource(AbstractJobSource):
             "sort_by": "date",
             "content-type": "application/json",
         }
+        if location:
+            params["where"] = location
 
         async with httpx.AsyncClient() as client:
             resp = await client.get(url, params=params)
@@ -109,8 +116,9 @@ class AdzunaSource(AbstractJobSource):
         is_remote = "remote" in location_lower or "anywhere" in location_lower
 
         # Extract skills from description
-        from backend.services.job_normalizer import _extract_skills_from_text
+        from backend.services.job_normalizer import _extract_skills_from_text, derive_work_mode
         skills = _extract_skills_from_text(desc)
+        work_mode = derive_work_mode(location, title, desc, remote=is_remote)
 
         posted = None
         if raw.get("created"):
@@ -127,6 +135,7 @@ class AdzunaSource(AbstractJobSource):
             company=company,
             location=location,
             remote=is_remote,
+            work_mode=work_mode,
             description=desc,
             skills=skills,
             salary_min=salary_min,

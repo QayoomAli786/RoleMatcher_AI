@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from langgraph.graph import END, START, StateGraph
 
@@ -39,11 +40,11 @@ Return a JSON object with exactly these keys:
   "roadmap_steps": [
     {{
       "step": 1,
-      "title": "Learn Python",
+      "title": "Core fundamentals for the target role",
       "duration": "3-4 weeks",
-      "topics": ["Variables & Data Types", "Functions & OOP", "File I/O", "Libraries overview"],
-      "resources": ["Python.org tutorial", "Automate the Boring Stuff"],
-      "practice": "Build a CLI tool that parses CSV files"
+      "topics": ["topic 1", "topic 2", "topic 3"],
+      "resources": ["Course or book name", "Documentation or tutorial URL"],
+      "practice": "A short hands-on project applying this step's skills"
     }}
   ],
   "portfolio_projects": [
@@ -69,18 +70,18 @@ Rules for roadmap_steps:
 - Each step must have 3-6 specific topics (not generic)
 - Each step must have 1-2 concrete resources (course names, book titles, tutorial URLs)
 - Each step must have a hands-on practice project
-- For ML Engineer: start with Python → Math/Calculus → Statistics → ML Libraries → Deep Learning → Specialization → Portfolio
-- Be SPECIFIC to the target role, not generic
+- Be SPECIFIC to the target role: every step, topic, resource and project must make sense for "{target_role}" and nothing else
+- Never substitute a machine learning / data science curriculum unless the target role explicitly is one
 
 Rules for portfolio_projects:
 - Include 3 projects, increasing difficulty
 - Each must have a clear description and technologies used
-- Start with a small data analysis project, end with a full end-to-end ML pipeline
+- Projects must be relevant to the target role's day-to-day work
 
 Rules for application_strategy:
 - 3-4 specific tips per category
 - Tips should be actionable, not generic
-- Include specific platforms (LinkedIn, GitHub, Kaggle, etc.)
+- Include platforms relevant to the target role's industry
 
 Return ONLY valid JSON, no markdown fences.
 """
@@ -103,7 +104,7 @@ async def generate_full_roadmap_node(state: CareerState) -> dict:
     # Build gap summary
     gap_skills = ", ".join(
         g.get("skill", "") for g in gaps if isinstance(g, dict) and g.get("skill")
-    ) or "Python, core libraries, domain fundamentals"
+    ) or "Core fundamentals, key tools, and domain knowledge for the target role"
 
     prompt = _FULL_ROADMAP_PROMPT.format(
         target_role=target_role,
@@ -115,7 +116,6 @@ async def generate_full_roadmap_node(state: CareerState) -> dict:
         result = await _router.complete(
             messages=[{"role": "user", "content": prompt}],
             category=TaskCategory.CAREER_STRATEGY,
-            model="fast",  # Use fast model for speed
         )
         raw = str(result)
         roadmap_data = _parse_roadmap_json(raw)
@@ -169,7 +169,7 @@ def _fallback_roadmap(target_role: str, skills: list[str], gap_str: str) -> dict
     role_lower = target_role.lower()
 
     # Role-specific roadmap steps
-    if any(kw in role_lower for kw in ("ml", "machine learning", "data scien", "ai")):
+    if re.search(r"\b(ml|machine learning|data scien\w*|ai|artificial intelligence)\b", role_lower):
         steps = [
             {"step": 1, "title": "Master Python Programming", "duration": "3-4 weeks",
              "topics": ["Variables, Data Types, Control Flow", "Functions & OOP", "File I/O & Error Handling", "List/Dict Comprehensions", "Virtual Environments & pip"],

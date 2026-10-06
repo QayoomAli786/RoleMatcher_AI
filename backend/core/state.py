@@ -27,6 +27,7 @@ class JobState(TypedDict):
     target_role: str
     resume_profile: dict[str, Any]  # Serialized ResumeProfile
     user_location: str
+    work_mode: str  # any, onsite, hybrid, remote
     query_keywords: list[str]
     source_results: dict[str, list[dict[str, Any]]]  # source_name -> raw jobs
     normalized_jobs: list[dict[str, Any]]

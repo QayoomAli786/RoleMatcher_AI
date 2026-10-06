@@ -86,6 +86,7 @@ def _parse_salary_range(text: str) -> tuple[int | None, int | None, str]:
 # ── Location Normalization ────────────────────────────────────────────────────
 
 _REMOTE_KEYWORDS = {"remote", "fully remote", "100% remote", "distributed", "anywhere", "global", "worldwide"}
+_HYBRID_KEYWORD = "hybrid"
 
 
 def _normalize_location(raw: str) -> tuple[str, bool]:
@@ -94,12 +95,31 @@ def _normalize_location(raw: str) -> tuple[str, bool]:
         return "", False
 
     lower = raw.strip().lower()
+    if _HYBRID_KEYWORD in lower:
+        return raw.strip(), False
     for kw in _REMOTE_KEYWORDS:
         if kw in lower:
             return "Remote", True
 
     location = raw.strip()
     return location, False
+
+
+def derive_work_mode(*texts: str, remote: bool = False) -> str:
+    """Derive work mode: (0) location, (1) title, (2+) any extra text.
+
+    Hybrid is checked across all text; remote only against location/title —
+    descriptions mention "remote" constantly and would mark everything remote.
+    """
+    location = str(texts[0]) if texts else ""
+    title = str(texts[1]) if len(texts) > 1 else ""
+    all_text = " ".join(str(t) for t in texts).lower()
+
+    if _HYBRID_KEYWORD in all_text:
+        return "hybrid"
+    if remote or any(kw in location.lower() for kw in _REMOTE_KEYWORDS) or "remote" in title.lower():
+        return "remote"
+    return "onsite"
 
 
 def _normalize_employment_type(raw: str) -> str:
@@ -135,10 +155,12 @@ def extract_skills_from_description(text: str) -> list[str]:
 
 def normalize_linkedin_job(raw: dict) -> Job:
     """Normalize a LinkedIn job listing dict."""
-    location, remote = _normalize_location(raw.get("location", ""))
+    raw_location = raw.get("location", "")
+    location, remote = _normalize_location(raw_location)
     title = raw.get("title", "")
     desc = raw.get("description", "")
     skills = extract_skills_from_description(desc)
+    work_mode = derive_work_mode(raw_location, title, desc, remote=remote)
 
     posted = None
     if raw.get("postedDate"):
@@ -154,6 +176,7 @@ def normalize_linkedin_job(raw: dict) -> Job:
         company=raw.get("companyName", raw.get("company", "")),
         location=location or "",
         remote=remote,
+        work_mode=work_mode,
         description=desc,
         skills=skills,
         salary_min=raw.get("salaryMin"),
@@ -180,6 +203,7 @@ def normalize_generic_job(raw: dict) -> Job:
     location, remote = _normalize_location(location_field)
     salary_min, salary_max, currency = _parse_salary_range(salary_raw)
     skills = extract_skills_from_description(desc_field)
+    work_mode = derive_work_mode(location_field, title_field, desc_field, remote=remote)
 
     posted = None
     for date_field in ("posted_at", "postedDate", "created_at", "date", "pubDate", "published"):
@@ -202,6 +226,7 @@ def normalize_generic_job(raw: dict) -> Job:
         company=company_field,
         location=location or "",
         remote=remote,
+        work_mode=work_mode,
         description=desc_field,
         skills=skills,
         salary_min=salary_min,

@@ -285,16 +285,23 @@ function setJobsMode(mode) {
     }
 }
 
+function getJobFilters() {
+    return {
+        location: document.getElementById('job-location').value.trim() || 'All Countries',
+        work_mode: document.getElementById('job-work-mode').value,
+    };
+}
+
 async function searchJobs() {
     const keywords = document.getElementById('job-keywords').value;
-    const location = document.getElementById('job-location').value.trim() || 'All Countries';
+    const { location, work_mode } = getJobFilters();
     if (!keywords.trim()) return showToast('Enter a job title or keywords', 'error');
     showLoading('Searching jobs...');
     try {
         const data = await apiFetch(`${API_BASE}/jobs/search`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ target_role: keywords.trim(), location }),
+            body: JSON.stringify({ target_role: keywords.trim(), location, work_mode }),
         }).then(r => r.json());
         hideLoading();
         jobsData = (data.jobs || []).slice(0, 15);
@@ -314,13 +321,13 @@ async function searchJobs() {
 
 async function searchResumeJobs() {
     if (!resumeData?.resume_id) return showToast('Upload a resume first', 'error');
-    const location = document.getElementById('job-location').value.trim() || 'All Countries';
+    const { location, work_mode } = getJobFilters();
     showLoading('Matching jobs to your resume...');
     try {
         const data = await apiFetch(`${API_BASE}/jobs/search`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ resume_id: resumeData.resume_id, location }),
+            body: JSON.stringify({ resume_id: resumeData.resume_id, location, work_mode }),
         }).then(r => r.json());
         hideLoading();
         jobsData = (data.jobs || []).slice(0, 15);
@@ -361,7 +368,9 @@ function renderJobs() {
         const missing = (match.missing_skills || []).slice(0, 4);
         const source = job.source || '';
         const desc = job.description || '';
-        const showMeta = (job.location || job.employment_type || job.remote || job.salary_max);
+        const mode = job.work_mode || (job.remote ? 'remote' : 'onsite');
+        const modePill = { remote: ['fa-globe', 'Remote'], hybrid: ['fa-circle-half-stroke', 'Hybrid'], onsite: ['fa-building', 'Onsite'] }[mode];
+        const showMeta = (job.location || job.employment_type || modePill || job.salary_max);
         return `
         <div class="job-card glass-card">
             <div class="job-card-head">
@@ -383,7 +392,7 @@ function renderJobs() {
             <div class="job-meta">
                 ${job.location ? `<span class="job-meta-pill"><i class="fas fa-map-marker-alt"></i> ${job.location}</span>` : ''}
                 ${job.employment_type ? `<span class="job-meta-pill"><i class="fas fa-clock"></i> ${job.employment_type}</span>` : ''}
-                ${job.remote ? '<span class="job-meta-pill"><i class="fas fa-globe"></i> Remote</span>' : ''}
+                ${modePill ? `<span class="job-meta-pill"><i class="fas ${modePill[0]}"></i> ${modePill[1]}</span>` : ''}
                 ${job.salary_max ? `<span class="job-meta-pill"><i class="fas fa-dollar-sign"></i> ${job.salary_min ? '$' + job.salary_min + ' - ' : ''}$${job.salary_max}</span>` : ''}
             </div>` : ''}
             ${scorePct != null && scorePct >= 0 ? `

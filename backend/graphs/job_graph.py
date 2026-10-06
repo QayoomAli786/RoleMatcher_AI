@@ -68,18 +68,24 @@ async def extract_keywords_node(state: JobState) -> dict:
 
 
 async def collect_from_sources_node(state: JobState) -> dict:
-    """Query all registered job sources in parallel with failure isolation."""
+    """Query all registered job sources in parallel with failure isolation.
+
+    Location and work mode are passed as structured params (sources that
+    support geo/workplace filtering use them) instead of being glued into
+    the keyword text.
+    """
     keywords = state.get("query_keywords", [])
     location = state.get("user_location", "")
-    parts = list(keywords)
-    if location:
-        parts.append(location)
-    query = " ".join(parts)
+    work_mode = state.get("work_mode", "any") or "any"
+    query = " ".join(keywords)
     if not query:
         return {"source_results": {}}
+    source_location = "" if _is_all_locations(location) else location.strip()
 
     try:
-        jobs = await _source_manager.collect_jobs(query=query, limit=50)
+        jobs = await _source_manager.collect_jobs(
+            query=query, location=source_location, work_mode=work_mode, limit=50
+        )
     except Exception as exc:
         logger.error("Job collection failed: %s", exc)
         raise RuntimeError(f"Failed to collect jobs from sources: {exc}") from exc
@@ -147,18 +153,40 @@ def _is_all_locations(loc: str) -> bool:
     return loc.lower().strip() in _ALL_LOCATIONS
 
 
+def _location_parts(loc: str) -> list[str]:
+    loc = loc.lower().replace(" metro area", "")
+    return [" ".join(p.split()) for p in loc.split(",") if p.strip()]
+
+
+def _location_matches(user_location: str, job_location: str) -> bool:
+    """Normalized exact-place match (Q2): equal parts, or a >=6-char prefix
+    so 'New York' matches 'New York City, NY' but never 'York, UK'/'Newark, NJ'."""
+    if not user_location or not job_location:
+        return False
+    for u in _location_parts(user_location):
+        for j in _location_parts(job_location):
+            if u == j:
+                return True
+            shorter, longer = (u, j) if len(u) <= len(j) else (j, u)
+            if len(shorter) >= 6 and longer.startswith(shorter):
+                return True
+    return False
+
+
 async def filter_candidates_node(state: JobState) -> dict:
     """Pre-filter candidates based on basic criteria (remove obviously irrelevant).
 
-    Location filtering:
-    - 'All Countries' / 'All' / 'Worldwide' → no location filtering (show everything)
-    - Specific location → strict match (remote jobs always pass)
-    - Empty location → treat as 'All Countries'
+    Work-mode filter wins (per design):
+    - 'remote'   → remote jobs only, location ignored
+    - 'onsite'/'hybrid' → exact work mode + strict location match, no remote
+    - 'any'      → jobs matching the location, plus remote jobs
+    - specific location is strict; 'All Countries' / empty → no location constraint
     """
     candidates = state.get("candidate_jobs", [])
     keywords = [k.lower() for k in state.get("query_keywords", [])]
     user_location = state.get("user_location", "").lower().strip()
     show_all_locations = _is_all_locations(user_location) or not user_location
+    work_mode = (state.get("work_mode", "any") or "any").lower().strip()
 
     filtered = []
     for job_data in candidates:
@@ -171,25 +199,17 @@ async def filter_candidates_node(state: JobState) -> dict:
         if not any(kw in combined_text for kw in keywords):
             continue
 
+        # Work-mode filter
+        job_mode = (job_data.get("work_mode")
+                    or ("remote" if job_data.get("remote") else "onsite")).lower()
+        if work_mode != "any" and job_mode != work_mode:
+            continue
+
         # Location filter
-        if not show_all_locations:
-            job_location = (job_data.get("location", "") or "").lower()
-            is_remote = job_data.get("remote", False)
-            if not is_remote:
-                if not job_location:
-                    # No location listed — skip (user asked for a specific place)
+        if work_mode != "remote" and not show_all_locations:
+            if job_mode != "remote":  # 'any' + specific location: remote jobs pass
+                if not _location_matches(user_location, job_data.get("location", "") or ""):
                     continue
-                # Normalize for comparison: strip common suffixes
-                def _loc_key(loc: str) -> str:
-                    return loc.replace(", ", ",").replace(" metro area", "").replace(" area", "").strip()
-                ul = _loc_key(user_location)
-                jl = _loc_key(job_location)
-                # Require at least one to contain the other, or share a city token
-                if not (ul in jl or jl in ul):
-                    ul_tokens = set(t.strip() for t in ul.split(",") if len(t.strip()) > 2)
-                    jl_tokens = set(t.strip() for t in jl.split(",") if len(t.strip()) > 2)
-                    if not (ul_tokens & jl_tokens):
-                        continue
 
         filtered.append(job_data)
 

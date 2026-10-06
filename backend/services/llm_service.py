@@ -150,15 +150,18 @@ class ModelRouter:
     # ── Model selection ────────────────────────────────────────────────────
 
     def _model_for(self, category: TaskCategory, model_override: str | None = None) -> str:
+        settings = self._settings
+        # "fast"/"strong" are tier aliases, not model names
+        aliases = {"fast": settings.fast_model, "strong": settings.strong_model}
         if model_override:
-            return model_override
+            return aliases.get(model_override, model_override)
         request_model = get_request_model()
         if request_model:
-            return request_model
+            return aliases.get(request_model, request_model)
         tier = _TASK_MODEL_MAP.get(category, "fast")
         if tier == "strong":
-            return self._settings.strong_model
-        return self._settings.fast_model
+            return settings.strong_model
+        return settings.fast_model
 
     def _fallback_model(self, failed_model: str) -> str:
         """Return a fallback model, preferring the same provider's models first."""

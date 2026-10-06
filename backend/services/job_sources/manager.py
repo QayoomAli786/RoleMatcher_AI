@@ -48,6 +48,8 @@ class JobSourceManager:
         query: str,
         sources: Sequence[str] | None = None,
         limit: int = 50,
+        location: str = "",
+        work_mode: str = "any",
     ) -> list[Job]:
         """Query the requested sources in parallel and merge deduplicated results.
 
@@ -59,6 +61,10 @@ class JobSourceManager:
             Source names to query. ``None`` = all registered sources.
         limit : int
             Max jobs *per source*.
+        location : str
+            Structured location filter ("" = no constraint).
+        work_mode : str
+            "any", "onsite", "hybrid", or "remote".
         """
         requested = sources or list(self._sources.keys())
 
@@ -80,7 +86,8 @@ class JobSourceManager:
         )
 
         tasks = [
-            self._guarded_fetch(source, query, limit) for source in active
+            self._guarded_fetch(source, query, limit, location, work_mode)
+            for source in active
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -107,8 +114,13 @@ class JobSourceManager:
         return deduped
 
     async def _guarded_fetch(
-        self, source: AbstractJobSource, query: str, limit: int
+        self,
+        source: AbstractJobSource,
+        query: str,
+        limit: int,
+        location: str = "",
+        work_mode: str = "any",
     ) -> list[Job]:
         sem = self._semaphores[source.config.name]
         async with sem:
-            return await source.fetch(query, limit)
+            return await source.fetch(query, limit, location, work_mode)

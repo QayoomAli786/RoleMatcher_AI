@@ -29,6 +29,7 @@ class _SearchBody(BaseModel):
     target_role: str | None = None
     keywords: str | None = None
     location: str = "All Countries"
+    work_mode: str = "any"  # any, onsite, hybrid, remote
     resume_id: str | None = None
 
 
@@ -97,6 +98,7 @@ async def search_jobs(
                 "resume_id": resume_id or uuid.UUID("00000000-0000-0000-0000-000000000000"),
                 "target_role": target,
                 "user_location": body.location or "All Countries",
+                "work_mode": body.work_mode if body.work_mode in ("any", "onsite", "hybrid", "remote") else "any",
                 "resume_profile": resume_profile or {},
                 "query_keywords": [],
                 "source_results": {},

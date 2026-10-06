@@ -100,6 +100,7 @@ class Job(BaseModel):
     company: str
     location: str = ""
     remote: bool = False
+    work_mode: str = "onsite"  # onsite, hybrid, remote
     description: str = ""
     skills: list[str] = Field(default_factory=list)
     salary_min: int | None = None
