@@ -23,17 +23,12 @@
 
 *Stop applying blindly. Start landing interviews.*
 
-<br/>
-
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-54.206.89.234-6366F1?style=for-the-badge)](http://54.206.89.234:8000/)
-
 </div>
-
 ---
 
 ## Overview
 
-**CareerCopilot AI** (also branded *RoleMatcherAi*) is a multi-workflow AI system that automates every stage of the modern job search. Built on **LangGraph** and **LangChain**, it runs six specialized workflows — **Resume Parser**, **Job Matcher**, **ATS Analyzer**, **Career Strategist**, **Interview Coach**, and **Chat Assistant** — that collaborate through shared state to source relevant roles, optimize your resume, and produce a personalized career roadmap.
+**RoleMatcher AI** is a multi-workflow AI system that automates every stage of the modern job search. Built on **LangGraph** and **LangChain**, it runs six specialized workflows — **Resume Parser**, **Job Matcher**, **ATS Analyzer**, **Career Strategist**, **Interview Coach**, and **Chat Assistant** — that collaborate through shared state to source relevant roles, optimize your resume, and produce a personalized career roadmap.
 
 Users bring their own API key (Gemini, OpenAI, Groq, DeepSeek, or Qwen) through the Settings panel — no server-side key is required.
 
@@ -79,14 +74,7 @@ Users bring their own API key (Gemini, OpenAI, Groq, DeepSeek, or Qwen) through 
 - **Styling**: Custom CSS design system — glassmorphism, micro-animations, backdrop filters, particles, dark mode
 - **Markdown**: marked.js for career plan and feedback rendering
 - **Export**: Vendored jsPDF for client-side PDF export
-
-### Infrastructure
-
-- **Hosting**: [AWS EC2](https://aws.amazon.com/ec2/) — a single Uvicorn process serves both the API and the static frontend
-- **Dependencies**: pip + `requirements.txt`
-
 ---
-
 ## Project Architecture
 
 ```
@@ -210,8 +198,8 @@ CareerCopilot_AI/
 ### 1. Clone and Install
 
 ```bash
-git clone https://github.com/Dev-with-Mouzan/CareerCopilot_AI.git
-cd CareerCopilot_AI
+git clone https://github.com/QayoomAli786/RoleMatcher_AI.git
+cd RoleMatcher_AI
 
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
@@ -251,16 +239,6 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 python -m backend.tests.test_skill_aliases
 python -m backend.tests.test_interview_parse
 ```
-
-### Documentation
-
-A complete functionality reference is included as [`CareerCopilot_AI_Functionality_Guide.docx`](./CareerCopilot_AI_Functionality_Guide.docx). Regenerate it with:
-
-```bash
-python docs/generate_functionality_doc.py
-```
-
----
 
 ## API Overview
 
@@ -302,18 +280,6 @@ Requests are rate-limited per IP (60 requests per minute by default); rejected r
 
 ---
 
-## Deployment
-
-| Layer | Platform | Purpose |
-|---|---|---|
-| **Full Stack** | [AWS EC2](https://aws.amazon.com/ec2/) | Uvicorn instance serving the FastAPI API and the static frontend |
-
-**Live application: [http://54.206.89.234:8000/](http://54.206.89.234:8000/)**
-
-The application is a single Uvicorn process serving both the JSON API and the static frontend, so any host that can run Python 3.11+ can serve it with the same command used in [Getting Started](#getting-started). On EC2, open port `8000` in the instance's security group. Users must configure their own API key and model in **Settings** before using the app.
-
----
-
 ## Roadmap
 
 - [x] Resume parsing with skill detection
@@ -327,28 +293,13 @@ The application is a single Uvicorn process serving both the JSON API and the st
 - [x] Conversational AI chat assistant
 - [x] User-configurable model and API key (bring your own key)
 - [x] Multi-language resume support
-- [x] Deployment on AWS EC2
-
----
-
-## Contributing
-
-Contributions are welcome. Please open an issue first to discuss what you would like to change, then submit a pull request.
-
-1. Fork the repository
-2. Create your feature branch: `git checkout -b feature/your-feature`
-3. Commit your changes: `git commit -m 'Add your feature'`
-4. Push to the branch: `git push origin feature/your-feature`
-5. Open a Pull Request
 
 ---
 
 <div align="center">
 
-Built by **Mouzan Raza**
+Built by **Qayoom Ali**
 
-*If CareerCopilot helped you land a role, consider giving this repo a star — it means the world!*
-
-[![Live Demo](https://img.shields.io/badge/Try%20It%20Now-54.206.89.234-6366F1?style=for-the-badge)](http://54.206.89.234:8000/)
+*If RoleMatcher helped you land a role, consider giving this repo a star — it means the world!*
 
 </div>
