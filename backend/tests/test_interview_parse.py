@@ -1,6 +1,8 @@
 """Regression check: the parsed model answer must keep its markdown structure."""
 
-from backend.api.interview import _parse_evaluation
+import asyncio
+
+from backend.api.interview import _evaluate_answer, _parse_evaluation
 
 SAMPLE = """SCORE: 7
 STRENGTHS:
@@ -35,5 +37,21 @@ def demo():
     print("OK")
 
 
+def test_zero_score_survives_parse() -> None:
+    """SCORE: 0 must parse as 0 — the old clamp forced a minimum of 1."""
+    result = _parse_evaluation("SCORE: 0\nSTRENGTHS:\n- none\nIMPROVEMENTS:\n- none\n")
+    assert result["score"] == 0, result["score"]
+
+
+def test_junk_answer_scores_zero_without_llm() -> None:
+    """Random/short text scores 0 immediately, no LLM call involved."""
+    for junk in ("asdf", "lorem ipsum", "x y"):
+        result = asyncio.run(_evaluate_answer({"question": "q", "category": "technical"}, junk))
+        assert result["score"] == 0, (junk, result["score"])
+
+
 if __name__ == "__main__":
     demo()
+    test_zero_score_survives_parse()
+    test_junk_answer_scores_zero_without_llm()
+    print("All checks passed")

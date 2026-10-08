@@ -20,10 +20,26 @@ from backend.core.state import CareerState
 from backend.services.llm_service import ModelRouter, TaskCategory
 from backend.services.market_analyzer import analyze_market
 from backend.services.skill_gap_engine import analyze_skill_gaps
+from backend.services.web_search import WEB_SEARCH_SCHEMA, web_search
 
 logger = logging.getLogger(__name__)
 
 _router = ModelRouter()
+
+# Grants the web_search tool and forces role-specific research before planning.
+_RESEARCH_SYSTEM_PROMPT = """\
+You are an expert career coach with a web_search tool.
+
+BEFORE writing the roadmap, call web_search 1-3 times to research current,
+role-specific facts for this exact target role. Career paths differ wildly:
+for a doctor that means licensing exams, residency matching and board
+certification; for an engineer it means demanded tech stacks, interview loops
+and portfolio expectations; for other fields it means their own real path.
+Also search for high-quality, current learning resources for the role.
+
+If the tool returns "search unavailable", proceed from your own knowledge.
+Use real findings in the roadmap: resources must be concrete and current.
+Then return ONLY the JSON described in the user message."""
 
 # ── Single comprehensive prompt for the entire roadmap ──────────────────────
 
@@ -113,8 +129,13 @@ async def generate_full_roadmap_node(state: CareerState) -> dict:
     )
 
     try:
-        result = await _router.complete(
-            messages=[{"role": "user", "content": prompt}],
+        result = await _router.complete_with_tools(
+            messages=[
+                {"role": "system", "content": _RESEARCH_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            tools=[WEB_SEARCH_SCHEMA],
+            handlers={"web_search": web_search},
             category=TaskCategory.CAREER_STRATEGY,
         )
         raw = str(result)

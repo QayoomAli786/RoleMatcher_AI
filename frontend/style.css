@@ -1808,6 +1808,24 @@ select { cursor: pointer; }
     font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; margin-top: 4px;
 }
 
+/* Interview final review — all questions with answers */
+.itq-review-wrap { text-align: left; margin-top: 16px; }
+.itq-review-item { padding: 16px 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.itq-review-item:first-of-type { border-top: none; }
+.itq-review-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.itq-review-num { font-weight: 700; color: var(--text-primary); }
+.itq-review-score { margin-left: auto; font-weight: 700; font-size: 0.95rem; }
+.itq-review-q { font-weight: 600; color: var(--text-primary); line-height: 1.5; margin-bottom: 10px; }
+.itq-review-label {
+    display: block; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px;
+}
+.itq-review-model {
+    padding: 12px 14px; background: var(--bg-tertiary); border-radius: var(--radius-sm);
+    font-size: 0.85rem; color: var(--text-secondary);
+}
+.itq-review-model .interview-model-answer { margin: 0; }
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    COVER LETTER — MODE TABS
    ═══════════════════════════════════════════════════════════════════════════════ */

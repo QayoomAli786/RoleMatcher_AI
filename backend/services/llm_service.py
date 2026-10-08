@@ -304,6 +304,116 @@ class ModelRouter:
 
         raise RuntimeError("All LLM models failed")
 
+    # ── Tool-calling loop ─────────────────────────────────────────────────────
+
+    async def complete_with_tools(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        tools: list[dict[str, Any]],
+        handlers: dict[str, Any],
+        category: TaskCategory = TaskCategory.CHAT,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        max_rounds: int = 4,
+    ) -> str:
+        """Run a completion where the model may call tools before answering.
+
+        *tools* are OpenAI-format schemas; *handlers* maps tool name to a
+        (sync or async) callable executed when the model requests that tool.
+        Returns the model's final tool-free answer as text.
+        """
+        settings = self._settings
+        chosen_model = self._model_for(category, model)
+        temp = temperature if temperature is not None else settings.llm_temperature
+        tokens = max_tokens or settings.llm_max_tokens
+
+        last_error: Exception | None = None
+        for attempt_model in (chosen_model, self._fallback_model(chosen_model)):
+            try:
+                return await self._tool_loop(
+                    model=attempt_model,
+                    messages=messages,
+                    tools=tools,
+                    handlers=handlers,
+                    temperature=temp,
+                    max_tokens=tokens,
+                    max_rounds=max_rounds,
+                )
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "Tool loop failed on %s: %s — trying fallback", attempt_model, exc
+                )
+        raise RuntimeError(f"All LLM models failed: {last_error}")
+
+    async def _tool_loop(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, str]],
+        tools: list[dict[str, Any]],
+        handlers: dict[str, Any],
+        temperature: float,
+        max_tokens: int,
+        max_rounds: int,
+    ) -> str:
+        chat = self._build_chat_model(
+            model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            api_key=get_request_api_key() or "",
+        )
+        bound = chat.bind_tools(tools) if tools else chat
+        convo: list[Any] = list(messages)
+
+        for round_no in range(1, max_rounds + 1):
+            response = await bound.ainvoke(convo)
+            tool_calls = getattr(response, "tool_calls", None) or []
+            if not tool_calls:
+                return self._response_text(response)
+            convo.append(response)
+            for call in tool_calls:
+                name = call.get("name", "")
+                args = call.get("args", {}) or {}
+                handler = handlers.get(name)
+                if handler is None:
+                    result = f"Unknown tool: {name}"
+                else:
+                    logger.info("LLM tool call: %s(%s) [round %d]", name, args, round_no)
+                    result = handler(**args)
+                    if hasattr(result, "__await__"):
+                        result = await result
+                convo.append({
+                    "role": "tool",
+                    "tool_call_id": call.get("id", ""),
+                    "name": name,
+                    "content": str(result),
+                })
+
+        # Out of rounds: force a final tool-free answer so nothing is lost.
+        plain = self._build_chat_model(
+            model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            api_key=get_request_api_key() or "",
+        )
+        response = await plain.ainvoke(convo)
+        return self._response_text(response)
+
+    @staticmethod
+    def _response_text(response: Any) -> str:
+        content = getattr(response, "content", "")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            # Gemini can return a list of content parts
+            return "".join(
+                str(p.get("text", "")) for p in content if isinstance(p, dict)
+            )
+        return str(content)
+
     async def _call_llm(
         self,
         *,
@@ -325,14 +435,7 @@ class ModelRouter:
         response = await chat.ainvoke(messages)
         elapsed_ms = (time.monotonic() - t0) * 1000
 
-        content = ""
-        if isinstance(response.content, str):
-            content = response.content
-        elif isinstance(response.content, list):
-            # Gemini can return a list of content parts
-            content = "".join(
-                str(p.get("text", "")) for p in response.content if isinstance(p, dict)
-            )
+        content = self._response_text(response)
 
         # Track usage from LangChain's usage metadata when available
         meta = getattr(response, "usage_metadata", None) or {}

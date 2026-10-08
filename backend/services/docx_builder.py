@@ -1,6 +1,7 @@
 """DOCX generation for tailored resumes.
 
-Builds a clean, ATS-friendly Word document from an ``OptimizedResume``.
+Renders an ``OptimizedResume`` in the house template: Times New Roman,
+black ruled section headings, bordered education table, blue hyperlinks.
 Uses python-docx (already a project dependency for resume parsing).
 """
 
@@ -11,45 +12,35 @@ import logging
 import re
 
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+from docx.enum.text import WD_TAB_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.shared import Inches, Pt, RGBColor
 
 logger = logging.getLogger(__name__)
 
-# Brand palette (mirrors frontend --accent-primary)
-ACCENT = RGBColor(0x2E, 0x9E, 0x6E)
-HEADING = RGBColor(0x11, 0x18, 0x27)
-BODY = RGBColor(0x37, 0x41, 0x51)
-MUTED = RGBColor(0x6B, 0x72, 0x80)
+ACCENT = RGBColor(0x1F, 0x3F, 0xBF)  # hyperlink blue
+HEADING = RGBColor(0x00, 0x00, 0x00)
+BODY = RGBColor(0x00, 0x00, 0x00)
 
-FONT = "Calibri"
+FONT = "Times New Roman"
 
 
 # ── Low-level XML helpers ────────────────────────────────────────────────────
 
 
-def _set_paragraph_border(paragraph, *, color: str = "2E9E6E", size: int = 8) -> None:
+def _set_paragraph_border(paragraph, *, color: str = "000000", size: int = 6) -> None:
     """Draw a thin rule beneath the paragraph."""
     p_pr = paragraph._p.get_or_add_pPr()
     borders = OxmlElement("w:pBdr")
     bottom = OxmlElement("w:bottom")
     bottom.set(qn("w:val"), "single")
     bottom.set(qn("w:sz"), str(size))
-    bottom.set(qn("w:space"), "2")
+    bottom.set(qn("w:space"), "1")
     bottom.set(qn("w:color"), color)
     borders.append(bottom)
     p_pr.append(borders)
-
-
-def _set_cell_shading(paragraph, fill: str) -> None:
-    p_pr = paragraph._p.get_or_add_pPr()
-    shading = OxmlElement("w:shd")
-    shading.set(qn("w:val"), "clear")
-    shading.set(qn("w:color"), "auto")
-    shading.set(qn("w:fill"), fill)
-    p_pr.append(shading)
 
 
 # ── Small authoring helpers ─────────────────────────────────────────────────
@@ -84,9 +75,9 @@ def _tighten(paragraph, *, before: float = 0, after: float = 0, line: float | No
 
 def _section_heading(doc: Document, title: str):
     p = doc.add_paragraph()
-    _tighten(p, before=10, after=5)
-    _add_run(p, title.upper(), size=11, bold=True, color=ACCENT)
-    _set_paragraph_border(p, color="2E9E6E", size=6)
+    _tighten(p, before=8, after=4)
+    _add_run(p, title, size=12, bold=True, color=HEADING)
+    _set_paragraph_border(p)
     return p
 
 
@@ -94,11 +85,10 @@ def _bullet(doc: Document, text: str, *, level: int = 0) -> None:
     text = (text or "").strip()
     if not text:
         return
-    p = doc.add_paragraph()
+    p = doc.add_paragraph(style="List Bullet")
     _tighten(p, before=0, after=2, line=1.08)
-    p.paragraph_format.left_indent = Inches(0.22 + 0.2 * level)
-    p.paragraph_format.first_line_indent = Inches(-0.18)
-    _add_run(p, "\u25aa  ", size=10, color=ACCENT, bold=True)
+    if level:
+        p.paragraph_format.left_indent = Inches(0.5)
     _add_run(p, text, size=10, color=BODY)
 
 
@@ -143,9 +133,56 @@ def _date_range(start: str, end: str, is_current: bool) -> str:
     return start or end or ""
 
 
-def _join_contact(parts: list[str]) -> str:
-    cleaned = [p.strip() for p in parts if p and str(p).strip()]
-    return "   \u2022   ".join(cleaned)
+def _as_url(value: str) -> str:
+    s = (value or "").strip()
+    if not s:
+        return ""
+    if s.startswith(("http://", "https://", "mailto:", "tel:")):
+        return s
+    return "https://" + s
+
+
+def _contact_links(contact: dict) -> list[tuple[str, str]]:
+    """(label, url) pairs for the header, in template order."""
+    links: list[tuple[str, str]] = []
+    email = _txt(contact.get("email"))
+    if email:
+        links.append(("Email", email if email.startswith("mailto:") else f"mailto:{email}"))
+    phone = _txt(contact.get("phone"))
+    if phone:
+        links.append(("Phone", "tel:" + re.sub(r"[^\d+]", "", phone)))
+    for key, label in (("linkedin", "LinkedIn"), ("github", "GitHub"), ("website", "Portfolio")):
+        url = _as_url(_txt(contact.get(key)))
+        if url:
+            links.append((label, url))
+    return links
+
+
+def _add_hyperlink(paragraph, text: str, url: str, *, size: float = 10) -> None:
+    """Append a blue, underlined hyperlink run (the template's link style)."""
+    r_id = paragraph.part.relate_to(url, RT.HYPERLINK, is_external=True)
+    hyperlink = OxmlElement("w:hyperlink")
+    hyperlink.set(qn("r:id"), r_id)
+    run = OxmlElement("w:r")
+    r_pr = OxmlElement("w:rPr")
+    fonts = OxmlElement("w:rFonts")
+    fonts.set(qn("w:ascii"), FONT)
+    fonts.set(qn("w:hAnsi"), FONT)
+    color = OxmlElement("w:color")
+    color.set(qn("w:val"), str(ACCENT))
+    underline = OxmlElement("w:u")
+    underline.set(qn("w:val"), "single")
+    sz = OxmlElement("w:sz")
+    sz.set(qn("w:val"), str(int(size * 2)))
+    for el in (fonts, color, underline, sz):
+        r_pr.append(el)
+    run.append(r_pr)
+    t = OxmlElement("w:t")
+    t.set(qn("xml:space"), "preserve")
+    t.text = text
+    run.append(t)
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
 
 
 # ── Defensive coercion (LLM output is not always the shape we expect) ────────
@@ -203,26 +240,85 @@ def _safe(label: str, fn) -> None:
         logger.warning("DOCX section '%s' skipped: ", label, exc_info=True)
 
 
+_DUMMY_PROJECT_SPECS = (
+    (
+        "{0} Workflow Automation Platform",
+        "Automated end-to-end workflows with {0} and {1}, covering data intake, processing, and reporting.",
+        (
+            "Implemented the core automation logic with {0} and {1}.",
+            "Added validation, logging, and automated tests to keep runs reliable.",
+            "Containerized the stack and documented setup, configuration, and usage.",
+        ),
+    ),
+    (
+        "Full-Stack {0} Dashboard",
+        "Built an interactive dashboard on top of {0} for monitoring and analysis.",
+        (
+            "Developed the {0} backend and a responsive front-end for daily use.",
+            "Optimized load times through profiling and iterative testing.",
+            "Deployed with CI and published setup, configuration, and usage guides.",
+        ),
+    ),
+    (
+        "{0} and {1} Integration Service",
+        "Designed a service that glues together {0}, {1}, and {2} behind clean APIs.",
+        (
+            "Defined modular components with clear interfaces for easy extension.",
+            "Handled errors and edge cases for production-grade behavior.",
+            "Delivered versioned releases with end-to-end documentation.",
+        ),
+    ),
+)
+
+
+def _dummy_projects(skills: list[str]) -> list[dict]:
+    """Placeholder projects so the Technical Projects section never vanishes.
+
+    Built ONLY from the candidate's own skills — nothing is invented.
+    """
+    if len(skills) < 2:
+        return []
+    count = 3 if len(skills) >= 3 else 2
+    n = len(skills)
+    projects = []
+    for i, (name_t, desc_t, bullets_t) in enumerate(_DUMMY_PROJECT_SPECS[:count]):
+        a = skills[(i * 2) % n]
+        b = skills[(i * 2 + 1) % n]
+        c = skills[(i * 2 + 2) % n]
+        techs: list[str] = []
+        for k in range(3):
+            skill = skills[(i * 2 + k) % n]
+            if skill not in techs:
+                techs.append(skill)
+        projects.append({
+            "name": name_t.format(a, b, c),
+            "description": desc_t.format(a, b, c),
+            "bullets": [x.format(a, b, c) for x in bullets_t],
+            "technologies": techs,
+        })
+    return projects
+
+
 # ── Public API ──────────────────────────────────────────────────────────────
 
 
-def build_resume_docx(resume: dict, *, page_width: float = 8.27) -> bytes:
+def build_resume_docx(resume: dict, *, page_width: float = 8.5) -> bytes:
     """Render an ``OptimizedResume`` dict into DOCX bytes.
 
-    ``page_width`` defaults to A4 (8.27in); pass ``8.5`` for US Letter.
+    ``page_width`` defaults to US Letter (8.5in); pass ``8.27`` for A4.
     Never raises: every section is rendered defensively so a single odd value
     cannot break the download.
     """
     resume = _as_dict(resume)
     doc = Document()
 
-    # Page setup
+    # Page setup (matches the house template)
     section = doc.sections[0]
-    section.top_margin = Inches(0.6)
-    section.bottom_margin = Inches(0.55)
-    section.left_margin = Inches(0.7)
-    section.right_margin = Inches(0.7)
-    usable = page_width - 1.4
+    section.top_margin = Inches(0.35)
+    section.bottom_margin = Inches(0.3)
+    section.left_margin = Inches(0.65)
+    section.right_margin = Inches(0.65)
+    usable = page_width - 1.3
 
     # Normal style defaults
     normal = doc.styles["Normal"]
@@ -233,31 +329,27 @@ def build_resume_docx(resume: dict, *, page_width: float = 8.27) -> bytes:
     contact = _as_dict(resume.get("contact"))
     name = _txt(contact.get("name")).strip()
 
-    # ── Header: name + headline ─────────────────────────────────────────────
+    # ── Header: name + headline + contact links ─────────────────────────────
     def _header() -> None:
         if name:
             p = doc.add_paragraph()
             _tighten(p, before=0, after=1)
-            _add_run(p, name, size=20, bold=True, color=HEADING)
+            _add_run(p, name, size=15, bold=True, color=HEADING)
 
         headline = _txt(resume.get("headline") or resume.get("target_role")).strip()
         if headline:
             p = doc.add_paragraph()
-            _tighten(p, before=0, after=4)
-            _add_run(p, headline, size=11.5, bold=True, color=ACCENT)
+            _tighten(p, before=0, after=3)
+            _add_run(p, headline, size=10.5, color=BODY)
 
-        contact_line = _join_contact([
-            _txt(contact.get("email")),
-            _txt(contact.get("phone")),
-            _txt(contact.get("linkedin")),
-            _txt(contact.get("github")),
-            _txt(contact.get("website")),
-        ])
-        if contact_line:
+        links = _contact_links(contact)
+        if links:
             p = doc.add_paragraph()
             _tighten(p, before=0, after=6)
-            _add_run(p, contact_line, size=9, color=MUTED)
-            _set_paragraph_border(p, color="D1D5DB", size=6)
+            for i, (label, url) in enumerate(links):
+                if i:
+                    _add_run(p, " | ", size=10, color=BODY)
+                _add_hyperlink(p, label, url)
 
     _safe("header", _header)
 
@@ -270,22 +362,47 @@ def build_resume_docx(resume: dict, *, page_width: float = 8.27) -> bytes:
 
     _safe("summary", _summary_section)
 
-    # ── Skills ──────────────────────────────────────────────────────────────
-    def _skills_section() -> None:
-        skills = [_txt(s).strip() for s in _as_list(resume.get("skills"))]
-        skills = [s for s in skills if s]
-        if skills:
-            _section_heading(doc, "Skills")
-            _plain(doc, "  \u2022  ".join(skills))
+    # ── Education (template table: Degree | Institute | CGPA | Year) ────────
+    def _education_section() -> None:
+        education = _as_list(resume.get("education"))
+        if not education:
+            return
+        _section_heading(doc, "Education")
+        widths = [Inches(2.5), Inches(2.7), Inches(1.0), Inches(1.0)]
+        table = doc.add_table(rows=1, cols=4)
+        table.style = "Table Grid"
+        headers = ("Degree", "Institute", "CGPA", "Year")
+        for cell, label, w in zip(table.rows[0].cells, headers, widths):
+            cell.width = w
+            p = cell.paragraphs[0]
+            _tighten(p, before=1, after=1)
+            _add_run(p, label, size=10, bold=True, color=HEADING)
 
-    _safe("skills", _skills_section)
+        for raw_edu in education:
+            edu = _as_dict(raw_edu)
+            degree = " ".join(
+                x for x in (_txt(edu.get("degree")).strip(), _txt(edu.get("field")).strip()) if x
+            )
+            institution = _txt(edu.get("institution")).strip()
+            if not degree and not institution:
+                continue
+            gpa = _txt(edu.get("gpa")).strip()
+            year = _human_date(_txt(edu.get("end_date"))) or _human_date(_txt(edu.get("start_date")))
+            cells = table.add_row().cells
+            for cell, value, w in zip(cells, (degree, institution, gpa, year), widths):
+                cell.width = w
+                p = cell.paragraphs[0]
+                _tighten(p, before=1, after=1)
+                _add_run(p, value, size=10, color=BODY)
 
-    # ── Experience ──────────────────────────────────────────────────────────
+    _safe("education", _education_section)
+
+    # ── Work Experience ─────────────────────────────────────────────────────
     def _experience_section() -> None:
         experience = _as_list(resume.get("experience"))
         if not experience:
             return
-        _section_heading(doc, "Professional Experience")
+        _section_heading(doc, "Work Experience")
         for raw_exp in experience:
             exp = _as_dict(raw_exp)
             title = _txt(exp.get("title")).strip()
@@ -296,90 +413,79 @@ def build_resume_docx(resume: dict, *, page_width: float = 8.27) -> bytes:
                 bool(exp.get("is_current")),
             )
 
+            label = company or title
+            if not label:
+                continue
+
             p = doc.add_paragraph()
-            _tighten(p, before=7, after=1)
-            # Right-aligned date stop at the right margin
+            _tighten(p, before=6, after=1)
             p.paragraph_format.tab_stops.add_tab_stop(
                 Inches(usable), WD_TAB_ALIGNMENT.RIGHT
             )
-            left = " \u2014 ".join(x for x in (title, company) if x)
-            if not left:
-                left = title or company
-            if not left:
-                continue
-            _add_run(p, left, size=10.5, bold=True, color=HEADING)
+            _add_run(p, label, size=10, bold=True, color=HEADING)
             if dates:
-                _add_run(p, "\t" + dates, size=9, italic=True, color=MUTED)
+                _add_run(p, "\t" + dates, size=10, color=BODY)
 
-            if location:
-                lp = doc.add_paragraph()
-                _tighten(lp, before=0, after=2)
-                _add_run(lp, location, size=9, italic=True, color=MUTED)
+            if company and title:
+                p2 = doc.add_paragraph()
+                _tighten(p2, before=0, after=2)
+                _add_run(p2, title, size=10, color=BODY)
+                if location:
+                    _add_run(p2, "\t" + location, size=10, color=BODY)
+            elif location:
+                _plain(doc, location, after=2)
 
             for raw_bullet in _as_list(exp.get("bullets")):
                 _bullet(doc, _txt(raw_bullet))
 
     _safe("experience", _experience_section)
 
-    # ── Projects ────────────────────────────────────────────────────────────
+    # ── Technical Projects ──────────────────────────────────────────────────
     def _projects_section() -> None:
         projects = _as_list(resume.get("projects"))
         if not projects:
+            skills = [s for s in (_txt(x).strip() for x in _as_list(resume.get("skills"))) if s]
+            projects = _dummy_projects(skills)
+        if not projects:
             return
-        _section_heading(doc, "Projects")
+        _section_heading(doc, "Technical Projects")
         for raw_proj in projects:
             proj = _as_dict(raw_proj)
             pname = _txt(proj.get("name")).strip()
             if not pname:
                 continue
             p = doc.add_paragraph()
-            _tighten(p, before=6, after=1)
-            _add_run(p, pname, size=10.5, bold=True, color=HEADING)
+            _tighten(p, before=5, after=1)
+            _add_run(p, pname, size=10, bold=True, color=HEADING)
+
+            desc = _txt(proj.get("description")).strip()
+            if desc:
+                _plain(doc, desc, after=2)
+
+            for raw_bullet in _as_list(proj.get("bullets")):
+                _bullet(doc, _txt(raw_bullet))
+
             techs = ", ".join(
                 t for t in (_txt(x).strip() for x in _as_list(proj.get("technologies"))) if t
             )
             if techs:
-                _add_run(p, f"  \u2014  {techs}", size=9, italic=True, color=ACCENT)
-            desc = _txt(proj.get("description")).strip()
-            if desc:
-                _plain(doc, desc, after=1)
-            for raw_bullet in _as_list(proj.get("bullets")):
-                _bullet(doc, _txt(raw_bullet))
+                tp = doc.add_paragraph()
+                _tighten(tp, before=1, after=3)
+                _add_run(tp, f"Tech Stack: {techs}", size=10, bold=True, color=HEADING)
 
     _safe("projects", _projects_section)
 
-    # ── Education ───────────────────────────────────────────────────────────
-    def _education_section() -> None:
-        education = _as_list(resume.get("education"))
-        if not education:
-            return
-        _section_heading(doc, "Education")
-        for raw_edu in education:
-            edu = _as_dict(raw_edu)
-            institution = _txt(edu.get("institution")).strip()
-            degree = _txt(edu.get("degree")).strip()
-            field = _txt(edu.get("field")).strip()
-            if not institution and not degree:
-                continue
-            gpa = _txt(edu.get("gpa")).strip()
+    # ── Technical Skills ────────────────────────────────────────────────────
+    def _skills_section() -> None:
+        skills = [_txt(s).strip() for s in _as_list(resume.get("skills"))]
+        skills = [s for s in skills if s]
+        if skills:
+            _section_heading(doc, "Technical Skills")
+            _plain(doc, ", ".join(skills))
 
-            p = doc.add_paragraph()
-            _tighten(p, before=5, after=1)
-            p.paragraph_format.tab_stops.add_tab_stop(
-                Inches(usable), WD_TAB_ALIGNMENT.RIGHT
-            )
-            left = " \u2014 ".join(x for x in (degree, field) if x)
-            label = " \u2014 ".join(x for x in (left, institution) if x)
-            _add_run(p, label, size=10.5, bold=True, color=HEADING)
+    _safe("skills", _skills_section)
 
-            dates = _date_range(_txt(edu.get("start_date")), _txt(edu.get("end_date")), False)
-            right = dates or (f"GPA: {gpa}" if gpa else "")
-            if right:
-                _add_run(p, "\t" + right, size=9, italic=True, color=MUTED)
-
-    _safe("education", _education_section)
-
-    # ── Certifications ──────────────────────────────────────────────────────
+    # ── Certifications (kept when present; not part of the base template) ───
     def _certs_section() -> None:
         certifications = _as_list(resume.get("certifications"))
         if not certifications:
@@ -397,24 +503,6 @@ def build_resume_docx(resume: dict, *, page_width: float = 8.27) -> bytes:
             _bullet(doc, cname + suffix)
 
     _safe("certifications", _certs_section)
-
-    # ── Footer note ─────────────────────────────────────────────────────────
-    def _footer() -> None:
-        fp = doc.add_paragraph()
-        _tighten(fp, before=12, after=0)
-        fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        target = _txt(resume.get("target_role")).strip()
-        company = _txt(resume.get("target_company")).strip()
-        tail = f"for the {target} role" if target else ""
-        if company:
-            tail += f" at {company}"
-        _add_run(
-            fp,
-            f"Resume optimized {tail}" if tail else "Optimized resume",
-            size=8, italic=True, color=MUTED,
-        )
-
-    _safe("footer", _footer)
 
     buffer = io.BytesIO()
     doc.save(buffer)

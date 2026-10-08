@@ -71,6 +71,7 @@ async def start_interview(body: _StartBody, user: UserProfile = Depends(get_curr
         "questions": questions,
         "answers": [],
         "scores": [],
+        "evaluations": [],
         "total_questions": len(questions),
         "status": "in_progress",
         "created_at": str(uuid.uuid4()),
@@ -115,6 +116,18 @@ async def submit_answer(interview_id: uuid.UUID, body: _AnswerBody, user: UserPr
     answers[idx] = answer
     session["answers"] = answers
 
+    evaluations = list(session.get("evaluations", []))
+    while len(evaluations) < len(questions):
+        evaluations.append(None)
+    evaluations[idx] = {
+        "score": score,
+        "feedback": evaluation.get("feedback", ""),
+        "strengths": evaluation.get("strengths", []),
+        "improvements": evaluation.get("improvements", []),
+        "model_answer": evaluation.get("model_answer", ""),
+    }
+    session["evaluations"] = evaluations
+
     # Determine if session is complete
     completed = all(s is not None for s in scores)
     if completed:
@@ -153,6 +166,7 @@ async def get_interview(interview_id: uuid.UUID, user: UserProfile = Depends(get
         "questions": session.get("questions", []),
         "scores": session.get("scores", []),
         "answers": session.get("answers", []),
+        "evaluations": session.get("evaluations", []),
         "overall_score": overall,
         "completed": session.get("status") == "completed",
     }
@@ -341,16 +355,34 @@ def _fallback_question(role: str, index: int) -> dict:
 
 async def _evaluate_answer(question: dict, answer: str) -> dict:
     """Evaluate the user's answer using the LLM."""
+    # Junk guard: a token or two can never answer an interview question.
+    if len(re.findall(r"\w+", answer)) < 3:
+        return {
+            "score": 0,
+            "feedback": (
+                "Score: 0/10\n"
+                "Strengths: None\n"
+                "Areas to improve: Give a complete, relevant answer in full sentences"
+            ),
+            "strengths": [],
+            "improvements": ["Give a complete, relevant answer in full sentences"],
+            "model_answer": "",
+        }
+
     prompt = (
         f"Interview Question: {question.get('question', 'N/A')}\n"
         f"Category: {question.get('category', 'N/A')}\n"
         f"Difficulty: {question.get('difficulty', 'N/A')}\n\n"
         f"Candidate Answer:\n{answer}\n\n"
-        "Evaluate this answer on a scale of 1-10. Provide a structured response with:\n"
-        "1. Score (integer 1-10)\n"
+        "Evaluate this answer on a scale of 0-10. Provide a structured response with:\n"
+        "1. Score (integer 0-10)\n"
         "2. Strengths: 2-3 bullet points of what was good\n"
         "3. Improvements: 2-3 bullet points of what could be better\n"
         "4. Model Answer: what a strong candidate would say, kept SHORT\n\n"
+        "Scoring rules:\n"
+        "- Score 0 when the answer is gibberish or random text, has nothing to do with "
+        "the question, or contains no real content. Do NOT be generous with junk answers.\n"
+        "- Score 1-3 only for attempts that are largely irrelevant or empty.\n\n"
         "Format:\n"
         "SCORE: <number>\n"
         "STRENGTHS:\n- ...\n- ...\n"
@@ -394,7 +426,7 @@ def _parse_evaluation(text: str) -> dict:
         if line.upper().startswith("SCORE:"):
             try:
                 score = int(line.split(":", 1)[1].strip())
-                score = max(1, min(10, score))
+                score = max(0, min(10, score))
             except ValueError:
                 score = 5
             section = None

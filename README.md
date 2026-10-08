@@ -5,7 +5,6 @@
 <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"/>
 <img src="https://img.shields.io/badge/LangGraph-Workflows-FF6B6B?style=for-the-badge" alt="LangGraph"/>
 <img src="https://img.shields.io/badge/LangChain-Integration-3776AB?style=for-the-badge" alt="LangChain"/>
-<img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"/>
 
 <br/>
 <br/>
@@ -28,7 +27,7 @@
 
 ## Overview
 
-**RoleMatcher AI** is a multi-workflow AI system that automates every stage of the modern job search. Built on **LangGraph** and **LangChain**, it runs six specialized workflows — **Resume Parser**, **Job Matcher**, **ATS Analyzer**, **Career Strategist**, **Interview Coach**, and **Chat Assistant** — that collaborate through shared state to source relevant roles, optimize your resume, and produce a personalized career roadmap.
+**RoleMatcher AI** is a multi-workflow AI system that automates every stage of the modern job search. Built on **LangGraph** and **LangChain**, it runs eight specialized workflows — **Resume Parser**, **Job Matcher**, **ATS Analyzer**, **Career Strategist**, **Interview Coach**, **Cover Letter**, **Resume Optimizer**, and **Chat Assistant** — that collaborate through shared state to source relevant roles, optimize your resume, and produce a personalized career roadmap.
 
 Users bring their own API key (Gemini, OpenAI, Groq, DeepSeek, or Qwen) through the Settings panel — no server-side key is required.
 
@@ -40,18 +39,26 @@ Users bring their own API key (Gemini, OpenAI, Groq, DeepSeek, or Qwen) through 
 
 | Feature | Description |
 |---|---|
-| **Resume Parsing** | PDF/DOCX extraction into structured profiles with skill detection |
+| **Resume Parsing** | PDF upload in the UI (PDF/DOCX/TXT via API) into a structured profile with skill detection |
 | **Multi-Source Job Discovery** | Aggregates listings from LinkedIn, RemoteOK, and Adzuna with cross-source deduplication |
 | **Skill-Based Job Matching** | Multi-factor scoring: skill overlap, experience, seniority, location, salary, and semantic similarity |
 | **ATS Compatibility Scoring** | Keyword coverage, skill gaps, experience alignment, and LLM-powered recommendations |
-| **Strategic Career Planning** | Skill-gap analysis, market intelligence, learning roadmaps, and action plans |
-| **Interview Preparation** | Question generation with answer evaluation across technical, behavioral, and system design categories |
-| **Cover Letter Generation** | Tailored cover letters with tone selection (professional, enthusiastic, confident, creative) |
-| **Resume Tailoring** | Rewrites your resume for a specific role and exports the result as a DOCX file |
-| **Application Tracking** | Log applications, update their status, and review progress analytics |
+| **AI Resume Builder** | Rewrites your resume for one specific job — keyword injection, guarded against fabricated content, exportable as DOCX or PDF |
+| **Strategic Career Planning** | Skill-gap analysis, market intelligence, step-by-step learning roadmap, portfolio projects, and action plans |
+| **Interview Preparation** | Question generation with 0–10 answer evaluation, strengths/improvements, model answers, weak-question retry |
+| **Cover Letter Generation** | Tailored cover letters with tone selection (professional, enthusiastic, confident, creative) and session history |
+| **PDF Exports** | Client-side PDF export of career plans and interview reports (vendored jsPDF) |
 | **AI Chat Assistant** | Context-aware coaching with conversation history and tool usage tracking |
 | **Model Settings** | Bring your own key and choose the model in the UI — Gemini, OpenAI, DeepSeek, Qwen, or Groq |
-| **Premium UI** | Glassmorphism design with dynamic particles, micro-animations, and a dark-mode aesthetic |
+| **Premium UI** | Glassmorphism design with animated workflow canvas, particles, micro-animations, and a dark-mode aesthetic |
+
+> **Note:** Application tracking (`/api/applications`) and the dedicated `/api/ats/*` routes are API-only in this release — the UI runs ATS analysis per job via **Jobs → ATS**.
+
+---
+
+## Documentation
+
+📖 **[DOCUMENTATION.md](DOCUMENTATION.md)** — the complete reference explaining **every feature, screen, and button**: what each control does, which API call it triggers, how each backend workflow operates, the full endpoint list, and troubleshooting.
 
 ---
 
@@ -74,11 +81,13 @@ Users bring their own API key (Gemini, OpenAI, Groq, DeepSeek, or Qwen) through 
 - **Styling**: Custom CSS design system — glassmorphism, micro-animations, backdrop filters, particles, dark mode
 - **Markdown**: marked.js for career plan and feedback rendering
 - **Export**: Vendored jsPDF for client-side PDF export
+
 ---
+
 ## Project Architecture
 
 ```
-CareerCopilot_AI/
+RoleMatcher_AI/
 │
 ├── backend/                        # FastAPI + LangGraph backend
 │   ├── main.py                     # App entry point, CORS, middleware, static frontend
@@ -119,13 +128,13 @@ CareerCopilot_AI/
 │   │   ├── resume.py               # Resume upload & parsing
 │   │   ├── resume_optimizer.py     # Resume tailoring & DOCX download
 │   │   ├── jobs.py                 # Job search, matching, ATS analysis
-│   │   ├── ats.py                  # ATS endpoints (placeholder — see API Overview)
+│   │   ├── ats.py                  # ATS endpoints (stubs in in-memory mode)
 │   │   ├── career.py               # Career planning
 │   │   ├── interview.py            # Interview preparation
 │   │   ├── cover_letter.py         # Cover letter generation
 │   │   ├── chat.py                 # Chat assistant & conversations
 │   │   ├── reviews.py              # User reviews
-│   │   ├── applications.py         # Application tracking
+│   │   ├── applications.py         # Application tracking (API only)
 │   │   ├── auth.py                 # Guest user profile
 │   │   └── admin.py                # Health check & system stats
 │   │
@@ -141,14 +150,10 @@ CareerCopilot_AI/
 │   ├── vendor/                     # Vendored frontend libraries (jsPDF)
 │   └── logo.png
 │
-├── docs/                           # Documentation generators
-│   ├── generate_functionality_doc.py  # Builds the DOCX functionality guide
-│   └── _docx_helpers.py            # Shared python-docx helpers
-│
-├── CareerCopilot_AI_Functionality_Guide.docx
 ├── .env.example                    # Environment variable template
 ├── requirements.txt                # Python dependencies
-└── README.md
+├── README.md
+└── DOCUMENTATION.md                # Complete feature & button reference
 ```
 
 ---
@@ -177,11 +182,23 @@ CareerCopilot_AI/
 </td>
 <td width="33%" align="center">
 <h3>Interview Coach</h3>
-<p>Generates targeted questions (technical, behavioral, system design) and evaluates answers with detailed feedback.</p>
+<p>Generates targeted questions (technical, behavioral, or mixed) and evaluates answers 0–10 with feedback, model answers, and weak-question retry.</p>
 </td>
 <td width="33%" align="center">
 <h3>Chat Assistant</h3>
 <p>Context-aware career coaching with tool usage. Answers questions about your resume, jobs, ATS scores, and career plans.</p>
+</td>
+</tr>
+<tr>
+<td width="33%" align="center">
+<h3>Cover Letter</h3>
+<p>Tailored letters from your resume or manual details, with four selectable tones and a per-session history.</p>
+</td>
+<td width="33%" align="center">
+<h3>Resume Optimizer</h3>
+<p>Rewrites your resume for one specific job with keyword injection and anti-fabrication guardrails; exports to DOCX or PDF.</p>
+</td>
+<td width="33%" align="center">
 </td>
 </tr>
 </table>
@@ -235,9 +252,16 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
 ### 4. Run the Tests
 
+Each test module is self-checking — run any of them directly:
+
 ```bash
 python -m backend.tests.test_skill_aliases
 python -m backend.tests.test_interview_parse
+python -m backend.tests.test_interview_review
+python -m backend.tests.test_job_filters
+python -m backend.tests.test_career_input
+python -m backend.tests.test_career_tool_loop
+python -m backend.tests.test_docx_builder
 ```
 
 ## API Overview
@@ -263,16 +287,23 @@ All endpoints are prefixed with `/api`. Two optional headers are recognized on e
 | `/api/career/market` | `GET` | Market intelligence for target roles |
 | `/api/career/skill-gaps` | `GET` | Skill gap analysis against market demand |
 | `/api/interviews` | `POST` | Start an interview session |
+| `/api/interviews/{id}` | `GET` | Fetch interview session results |
 | `/api/interviews/{id}/answer` | `POST` | Submit an answer for evaluation |
 | `/api/interviews/{id}/feedback` | `GET` | Retrieve interview feedback |
 | `/api/cover-letters` | `POST` / `GET` | Generate and list cover letters |
+| `/api/cover-letters/{id}` | `GET` | Fetch one cover letter |
 | `/api/chat` | `POST` | Send a message to the AI assistant |
 | `/api/conversations` | `GET` | List chat conversations |
+| `/api/conversations/{id}` | `GET` / `DELETE` | Fetch or delete a conversation |
 | `/api/applications` | `POST` / `GET` | Track and list job applications |
+| `/api/applications/{id}` | `PATCH` | Update an application's status |
 | `/api/applications/analytics` | `GET` | Application statistics |
 | `/api/reviews` | `POST` / `GET` | Submit or list user reviews |
 | `/api/admin/stats` | `GET` | Runtime statistics |
+| `/api/admin/refresh-jobs` | `POST` | Force-refresh the job cache |
 | `/docs` | `GET` | Interactive Swagger UI (served at the site root) |
+
+> The full endpoint list (including resume-optimizer listing and ATS stubs) is documented in **[DOCUMENTATION.md](DOCUMENTATION.md#14-complete-api-reference)**.
 
 Requests are rate-limited per IP (60 requests per minute by default); rejected requests return `429` with `X-RateLimit-*` headers.
 
@@ -292,7 +323,9 @@ Requests are rate-limited per IP (60 requests per minute by default); rejected r
 - [x] Resume tailoring with DOCX export
 - [x] Conversational AI chat assistant
 - [x] User-configurable model and API key (bring your own key)
-- [x] Multi-language resume support
+- [x] Client-side PDF exports (career plan, interview report, tailored resume)
+- [ ] Application tracking UI (API already available)
+- [ ] Persistent storage (SQLite/Postgres) behind the existing store interface
 
 ---
 

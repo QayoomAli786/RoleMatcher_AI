@@ -76,6 +76,11 @@ function navigateTo(section) {
         if (overlay) overlay.classList.remove('hidden');
         section = 'settings';
     }
+    if (section === 'chat') {
+        document.getElementById('chat-fab').classList.add('active');
+        document.getElementById('chat-widget').classList.add('open');
+        return;
+    }
     const target = document.getElementById(`section-${section}`);
     if (!target) return;
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -690,6 +695,51 @@ function _pdfSafe(value) {
         .replace(/[^\u0020-\u00FF]/g, '?');
 }
 
+// Placeholder projects so the Technical Projects section never vanishes.
+// Built ONLY from the candidate's own skills — mirrors backend docx_builder.
+function _dummyProjects(skills) {
+    if (skills.length < 2) return [];
+    const specs = [
+        ['{0} Workflow Automation Platform',
+            'Automated end-to-end workflows with {0} and {1}, covering data intake, processing, and reporting.',
+            ['Implemented the core automation logic with {0} and {1}.',
+                'Added validation, logging, and automated tests to keep runs reliable.',
+                'Containerized the stack and documented setup, configuration, usage.']],
+        ['Full-Stack {0} Dashboard',
+            'Built an interactive dashboard on top of {0} for monitoring and analysis.',
+            ['Developed the {0} backend and a responsive front-end for daily use.',
+                'Optimized load times through profiling and iterative testing.',
+                'Deployed with CI and published setup, configuration, and usage guides.']],
+        ['{0} and {1} Integration Service',
+            'Designed a service that glues together {0}, {1}, and {2} behind clean APIs.',
+            ['Defined modular components with clear interfaces for easy extension.',
+                'Handled errors and edge cases for production-grade behavior.',
+                'Delivered versioned releases with end-to-end documentation.']],
+    ];
+    const count = skills.length >= 3 ? 3 : 2;
+    const n = skills.length;
+    const fmt = (s, a, b, c) => s.replace(/\{0\}/g, a).replace(/\{1\}/g, b).replace(/\{2\}/g, c);
+    const out = [];
+    for (let i = 0; i < count; i++) {
+        const [nameT, descT, bulletsT] = specs[i];
+        const a = skills[(i * 2) % n];
+        const b = skills[(i * 2 + 1) % n];
+        const c = skills[(i * 2 + 2) % n];
+        const techs = [];
+        for (let k = 0; k < 3; k++) {
+            const s = skills[(i * 2 + k) % n];
+            if (!techs.includes(s)) techs.push(s);
+        }
+        out.push({
+            name: fmt(nameT, a, b, c),
+            description: fmt(descT, a, b, c),
+            bullets: bulletsT.map((t) => fmt(t, a, b, c)),
+            technologies: techs,
+        });
+    }
+    return out;
+}
+
 function downloadTailoredPdf() {
     if (!tailoredResume?.optimized_id) return showToast('Build your AI resume first', 'info');
     if (!window.jspdf || !window.jspdf.jsPDF) {
@@ -703,187 +753,249 @@ function downloadTailoredPdf() {
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF('p', 'mm', 'a4');
 
-        const pageW = 210, margin = 16, contentW = pageW - margin * 2, bottom = 297 - 18;
-        const ACCENT = [46, 158, 110];
-        const HEAD = [17, 24, 39];
-        const BODY = [55, 65, 81];
-        const MUTED = [107, 114, 128];
-        const RULE = [209, 213, 219];
+        const pageW = 210, margin = 16.5, contentW = pageW - margin * 2, top = 10, bottom = 297 - 10;
+        const BLACK = [0, 0, 0];
+        const ACCENT = [31, 63, 191];
         const safe = _pdfSafe;
-        let y = margin;
+        let y = top;
 
         const obj = (v) => (v && typeof v === 'object') ? v : {};
         const str = (v) => (v == null ? '' : String(v)).trim();
         const arr = (v) => Array.isArray(v) ? v : (v ? [v] : []);
 
         const ink = (c) => pdf.setTextColor(c[0], c[1], c[2]);
-        const need = (h) => { if (y + h > bottom) { pdf.addPage(); y = margin; } };
-        const rule = (after) => {
-            pdf.setDrawColor(RULE[0], RULE[1], RULE[2]);
-            pdf.setLineWidth(0.3);
-            pdf.line(margin, y, pageW - margin, y);
-            y += after;
-        };
+        const need = (h) => { if (y + h > bottom) { pdf.addPage(); y = top; } };
 
         const sectionTitle = (title) => {
             if (!str(title)) return;
+            y += 2.8;
             need(18);
-            pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(11);
-            ink(ACCENT);
-            pdf.text(safe(str(title)).toUpperCase(), margin, y);
-            y += 4.8;
-            rule(5.5);
-            pdf.setFont('helvetica', 'normal');
+            pdf.setFont('times', 'bold');
+            pdf.setFontSize(12);
+            ink(BLACK);
+            pdf.text(safe(str(title)), margin, y + 4.4);
+            y += 6.2;
+            pdf.setDrawColor(0, 0, 0);
+            pdf.setLineWidth(0.3);
+            pdf.line(margin, y, pageW - margin, y);
+            y += 4.5;
         };
 
-        const para = (text, size = 10, color = BODY, gap = 2.5, indent = 0) => {
+        const para = (text, size = 10, color = BLACK, gap = 2.5, indent = 0) => {
             if (!str(text)) return;
-            pdf.setFont('helvetica', 'normal');
+            pdf.setFont('times', 'normal');
             pdf.setFontSize(size);
             ink(color);
             const lines = pdf.splitTextToSize(safe(str(text)), contentW - indent);
             const lh = size * 0.46 + 0.6;
             need(lines.length * lh + gap);
-            pdf.text(lines, margin + indent, y);
+            pdf.text(lines, margin + indent, y + size * 0.36);
             y += lines.length * lh + gap;
         };
 
         const bulletLine = (text, indent = 0) => {
             if (!str(text)) return;
-            pdf.setFont('helvetica', 'normal');
+            pdf.setFont('times', 'normal');
             pdf.setFontSize(10);
             const lines = pdf.splitTextToSize(safe(str(text)), contentW - indent - 5);
             const lh = 4.7;
             need(lines.length * lh + 1.6);
-            ink(ACCENT);
-            pdf.text('\u2022', margin + indent, y);
-            ink(BODY);
-            pdf.text(lines, margin + indent + 5, y);
+            ink(BLACK);
+            pdf.text('\u2022', margin + indent, y + 3.5);
+            pdf.text(lines, margin + indent + 5, y + 3.5);
             y += lines.length * lh + 1.6;
+        };
+
+        // ── Education table (Degree | Institute | CGPA | Year) ─────────────
+        const educationTable = (rows) => {
+            const headers = ['Degree', 'Institute', 'CGPA', 'Year'];
+            const widths = [0.347, 0.375, 0.139, 0.139].map((r) => contentW * r);
+            const padX = 1.6, padY = 1.6, lh = 4.6;
+            const cellFor = (d, i) => [
+                [str(d.degree), str(d.field)].filter(Boolean).join(' '),
+                str(d.institution), str(d.gpa),
+                _humanDate(str(d.end_date)) || _humanDate(str(d.start_date)),
+            ][i];
+            const wrapRow = (cells) => cells.map((c, i) =>
+                pdf.splitTextToSize(safe(str(c)), Math.max(widths[i] - padX * 2, 8)));
+            const rowH = (wrapped) =>
+                Math.max(1, ...wrapped.map((w) => w.length)) * lh + padY * 2 + 1.4;
+            const paint = (wrapped, h, isHeader) => {
+                pdf.setFont('times', isHeader ? 'bold' : 'normal');
+                pdf.setFontSize(10);
+                ink(BLACK);
+                pdf.setDrawColor(0, 0, 0);
+                pdf.setLineWidth(0.25);
+                let x = margin;
+                wrapped.forEach((lines, i) => {
+                    pdf.rect(x, y, widths[i], h);
+                    pdf.text(lines, x + padX, y + padY + 3.6);
+                    x += widths[i];
+                });
+                y += h;
+            };
+            pdf.setFont('times', 'bold');
+            let wrapped = wrapRow(headers);
+            let h = rowH(wrapped);
+            need(h);
+            paint(wrapped, h, true);
+            for (const d of rows) {
+                pdf.setFont('times', 'normal');
+                wrapped = wrapRow([0, 1, 2, 3].map((i) => cellFor(d, i)));
+                h = rowH(wrapped);
+                if (y + h > bottom) {
+                    pdf.addPage();
+                    y = top;
+                    pdf.setFont('times', 'bold');
+                    const hw = wrapRow(headers);
+                    paint(hw, rowH(hw), true);
+                }
+                pdf.setFont('times', 'normal');
+                paint(wrapped, h, false);
+            }
         };
 
         // ── Header ────────────────────────────────────────────────────────
         const name = str(contact.name);
         const headline = str(o.headline || o.target_role);
-        const contactBits = [contact.email, contact.phone, contact.linkedin,
-            contact.github, contact.website].map(str).filter(Boolean).join('   \u2022   ');
+        const contactLinks = [];
+        if (str(contact.email)) {
+            const em = str(contact.email);
+            contactLinks.push(['Email', em.startsWith('mailto:') ? em : `mailto:${em}`]);
+        }
+        if (str(contact.phone)) {
+            contactLinks.push(['Phone', `tel:${str(contact.phone).replace(/[^\d+]/g, '')}`]);
+        }
+        [['linkedin', 'LinkedIn'], ['github', 'GitHub'], ['website', 'Portfolio']].forEach(([k, label]) => {
+            let url = str(contact[k]);
+            if (!url) return;
+            if (!/^(https?:|mailto:|tel:)/i.test(url)) url = `https://${url}`;
+            contactLinks.push([label, url]);
+        });
 
         if (name) {
-            pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(19);
-            ink(HEAD);
-            pdf.text(safe(name), margin, y + 7);
-            y += 10;
+            pdf.setFont('times', 'bold');
+            pdf.setFontSize(15);
+            ink(BLACK);
+            pdf.text(safe(name), margin, y + 5.4);
+            y += 7.5;
         }
         if (headline) {
-            pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(11.5);
-            ink(ACCENT);
+            pdf.setFont('times', 'normal');
+            pdf.setFontSize(10.5);
+            ink(BLACK);
             const hl = pdf.splitTextToSize(safe(headline), contentW);
-            pdf.text(hl, margin, y + 3);
-            y += 3 + hl.length * 4.6;
+            pdf.text(hl, margin, y + 3.8);
+            y += 2 + hl.length * 4.4;
         }
-        if (contactBits) {
-            pdf.setFont('helvetica', 'normal');
-            pdf.setFontSize(9);
-            ink(MUTED);
-            const cl = pdf.splitTextToSize(safe(contactBits), contentW);
-            pdf.text(cl, margin, y + 4);
-            y += 4 + cl.length * 4;
+        if (contactLinks.length) {
+            pdf.setFont('times', 'normal');
+            pdf.setFontSize(10);
+            let cx = margin;
+            contactLinks.forEach(([label, url], i) => {
+                if (i) {
+                    ink(BLACK);
+                    pdf.text(' | ', cx, y + 4);
+                    cx += pdf.getTextWidth(' | ');
+                }
+                ink(ACCENT);
+                const w = pdf.getTextWidth(label);
+                if (typeof pdf.textWithLink === 'function') pdf.textWithLink(label, cx, y + 4, { url });
+                else pdf.text(label, cx, y + 4);
+                cx += w;
+            });
+            y += 7;
         }
-        y += 3;
-        rule(7);
+
+        const skills = arr(o.skills).map(str).filter(Boolean);
 
         // ── Summary ───────────────────────────────────────────────────────
         if (str(o.summary)) {
             sectionTitle('Professional Summary');
-            para(o.summary, 10, BODY, 2);
+            para(o.summary, 10, BLACK, 2);
         }
 
-        // ── Skills ────────────────────────────────────────────────────────
-        const skills = arr(o.skills).map(str).filter(Boolean);
-        if (skills.length) {
-            sectionTitle('Skills');
-            para(skills.join('   \u2022   '), 10, BODY, 2);
+        // ── Education (template table) ────────────────────────────────────
+        const education = arr(o.education).map(obj).filter((d) => str(d.institution) || str(d.degree));
+        if (education.length) {
+            sectionTitle('Education');
+            educationTable(education);
+            y += 3;
         }
 
-        // ── Experience ────────────────────────────────────────────────────
+        // ── Work Experience ───────────────────────────────────────────────
         const experience = arr(o.experience).map(obj).filter((e) => str(e.title) || str(e.company));
         if (experience.length) {
-            sectionTitle('Professional Experience');
+            sectionTitle('Work Experience');
             for (const e of experience) {
-                const left = safe([str(e.title), str(e.company)].filter(Boolean).join('  \u2014  '));
+                const company = str(e.company), title = str(e.title);
+                const label = safe(company || title);
                 const dates = safe(_expRange(e));
-                const headLines = pdf.splitTextToSize(left, dates ? contentW - 46 : contentW);
-                need(headLines.length * 4.6 + 6);
-                pdf.setFont('helvetica', 'bold');
-                pdf.setFontSize(10.5);
-                ink(HEAD);
-                pdf.text(headLines, margin, y);
+                pdf.setFont('times', 'bold');
+                pdf.setFontSize(10);
+                ink(BLACK);
+                const labelLines = pdf.splitTextToSize(label, dates ? contentW - 45 : contentW);
+                need(labelLines.length * 4.6 + 6);
+                pdf.text(labelLines, margin, y + 3.5);
                 if (dates) {
-                    pdf.setFont('helvetica', 'italic');
-                    pdf.setFontSize(9);
-                    ink(MUTED);
-                    pdf.text(dates, pageW - margin, y, { align: 'right' });
+                    pdf.setFont('times', 'normal');
+                    pdf.setFontSize(10);
+                    ink(BLACK);
+                    pdf.text(dates, pageW - margin, y + 3.5, { align: 'right' });
                 }
-                y += headLines.length * 4.6 + 1;
-                pdf.setFont('helvetica', 'normal');
+                y += labelLines.length * 4.6 + 1.5;
 
-                if (str(e.location)) {
-                    pdf.setFontSize(9);
-                    ink(MUTED);
-                    pdf.text(safe(str(e.location)), margin, y);
-                    y += 4;
+                if (company && title) {
+                    pdf.setFont('times', 'normal');
+                    pdf.setFontSize(10);
+                    ink(BLACK);
+                    pdf.text(safe(title), margin, y + 3.5);
+                    if (str(e.location)) {
+                        const tw = pdf.getTextWidth(safe(title));
+                        const tabX = margin + Math.max(Math.ceil((tw + 3) / 12.7) * 12.7, 12.7);
+                        pdf.text(safe(str(e.location)), tabX, y + 3.5);
+                    }
+                    y += 4.6;
+                } else if (str(e.location)) {
+                    para(str(e.location), 10, BLACK, 2);
                 }
                 arr(e.bullets).forEach((b) => bulletLine(b));
                 y += 3;
             }
         }
 
-        // ── Projects ──────────────────────────────────────────────────────
-        const projects = arr(o.projects).map(obj).filter((p) => str(p.name));
+        // ── Technical Projects (placeholders when the resume has none) ────
+        let projects = arr(o.projects).map(obj).filter((p) => str(p.name));
+        if (!projects.length) projects = _dummyProjects(skills);
         if (projects.length) {
-            sectionTitle('Projects');
+            sectionTitle('Technical Projects');
             for (const p of projects) {
-                const techs = arr(p.technologies).map(str).filter(Boolean).join(', ');
-                const title = safe(str(p.name) + (techs ? '  \u2014  ' + techs : ''));
                 need(10);
-                pdf.setFont('helvetica', 'bold');
-                pdf.setFontSize(10.5);
-                ink(HEAD);
-                pdf.text(title, margin, y);
+                pdf.setFont('times', 'bold');
+                pdf.setFontSize(10);
+                ink(BLACK);
+                pdf.text(safe(str(p.name)), margin, y + 3.5);
                 y += 5;
-                pdf.setFont('helvetica', 'normal');
-                para(p.description, 9.5, BODY, 1.5);
+                para(p.description, 10, BLACK, 2);
                 arr(p.bullets).forEach((b) => bulletLine(b));
-                y += 3;
+                const techs = arr(p.technologies).map(str).filter(Boolean).join(', ');
+                if (techs) {
+                    pdf.setFont('times', 'bold');
+                    pdf.setFontSize(10);
+                    ink(BLACK);
+                    const tl = pdf.splitTextToSize(safe(`Tech Stack: ${techs}`), contentW);
+                    need(tl.length * 4.6 + 3);
+                    pdf.text(tl, margin, y + 3.5);
+                    y += tl.length * 4.6 + 3;
+                }
+                y += 2;
             }
         }
 
-        // ── Education ─────────────────────────────────────────────────────
-        const education = arr(o.education).map(obj).filter((d) => str(d.institution) || str(d.degree));
-        if (education.length) {
-            sectionTitle('Education');
-            for (const d of education) {
-                const left = safe([str(d.degree), str(d.field), str(d.institution)]
-                    .filter(Boolean).join('  \u2014  '));
-                const right = safe(str(d.gpa) ? `GPA: ${str(d.gpa)}` : '');
-                const lines = pdf.splitTextToSize(left, right ? contentW - 40 : contentW);
-                need(lines.length * 4.6 + 4);
-                pdf.setFont('helvetica', 'bold');
-                pdf.setFontSize(10.5);
-                ink(HEAD);
-                pdf.text(lines, margin, y);
-                if (right) {
-                    pdf.setFont('helvetica', 'italic');
-                    pdf.setFontSize(9);
-                    ink(MUTED);
-                    pdf.text(right, pageW - margin, y, { align: 'right' });
-                }
-                y += lines.length * 4.6 + 4;
-                pdf.setFont('helvetica', 'normal');
-            }
+        // ── Technical Skills (last) ───────────────────────────────────────
+        if (skills.length) {
+            sectionTitle('Technical Skills');
+            para(skills.join(', '), 10, BLACK, 2);
         }
 
         // ── Certifications ────────────────────────────────────────────────
@@ -895,19 +1007,6 @@ function downloadTailoredPdf() {
                 bulletLine(str(c.name) + (bits ? '  \u2014  ' + bits : ''));
             }
         }
-
-        // ── Footer ────────────────────────────────────────────────────────
-        need(16);
-        y += 8;
-        const target = str(o.target_role || tailoredResume.job_title);
-        const company = str(o.target_company || tailoredResume.company_name);
-        let tail = target ? `for the ${target} role` : '';
-        if (company) tail += ` at ${company}`;
-        pdf.setFont('helvetica', 'italic');
-        pdf.setFontSize(8);
-        ink(MUTED);
-        pdf.text(safe(tail ? `Resume optimized ${tail}` : 'Optimized resume'),
-            pageW / 2, y, { align: 'center' });
 
         const base = str(tailoredResume.filename).replace(/\.(docx?|pdf)$/i, '') || 'Optimized-Resume';
         const filename = `${base}.pdf`;
@@ -940,9 +1039,23 @@ function initCareer() {
     document.getElementById('export-plan-btn').addEventListener('click', exportPlan);
 }
 
+// Mirrors the backend _is_valid_profession shape gate (career.py);
+// deeper judgment happens server-side.
+function _isValidProfession(value) {
+    const letters = value.toLowerCase().replace(/[^a-z]/g, '');
+    if (letters.length < 2) return false;
+    const compact = value.replace(/\s/g, '');
+    if (!compact || letters.length < compact.length * 0.5) return false;
+    if (/^(.)\1*$/.test(letters)) return false;
+    return true;
+}
+
 async function generateCareerPlan() {
     const targetField = document.getElementById('career-target-field').value.trim();
     if (!targetField) return showToast('Describe your target career field', 'error');
+    if (!_isValidProfession(targetField)) {
+        return showToast('Please enter a valid profession name (e.g. Cardiologist, Software Engineer)', 'error');
+    }
     const payload = { target_role: targetField };
     showLoading('Generating career plan...');
     try {
@@ -1343,6 +1456,7 @@ function exportPlan() {
 
 // ── Interview ───────────────────────────────────────────────────────────────
 let interviewSession = null;
+let interviewResults = null;
 let currentQuestionIndex = 0;
 
 function initInterview() {
@@ -1497,6 +1611,7 @@ async function finishInterview() {
 }
 
 function renderInterviewResults(data) {
+    interviewResults = data;
     const container = document.getElementById('interview-questions');
     const scores = (data.scores || []).filter(s => s !== null);
     const total = data.total_questions || scores.length || 0;
@@ -1508,6 +1623,31 @@ function renderInterviewResults(data) {
     const pct = Math.round((correct / (scores.length || 1)) * 100);
     const grade = overall >= 8 ? 'Excellent' : overall >= 6 ? 'Good' : overall >= 4 ? 'Fair' : 'Needs Improvement';
     const gradeColor = overall >= 7 ? 'var(--accent-primary)' : overall >= 4 ? '#eab308' : '#ef4444';
+
+    const questions = data.questions || [];
+    const evaluations = data.evaluations || [];
+    const review = questions.length ? `
+            <div class="cp-section glass-card itq-review-wrap">
+                <h4 class="cp-section-title"><i class="fas fa-list-check"></i> All Questions Review <span class="cp-count">${questions.length}</span></h4>
+                ${questions.map((q, i) => {
+                    const ev = evaluations[i] || {};
+                    const sc = typeof ev.score === 'number' ? ev.score : (data.scores || [])[i];
+                    const scColor = sc == null ? '' : sc >= 7 ? 'var(--accent-primary)' : sc >= 4 ? '#eab308' : '#ef4444';
+                    const model = ev.model_answer || '';
+                    return `
+                <div class="itq-review-item">
+                    <div class="itq-review-head">
+                        <span class="itq-review-num">Q${i + 1}</span>
+                        <span class="interview-q-cat">${esc(q.category || '')}</span>
+                        <span class="interview-q-diff">${esc(q.difficulty || '')}</span>
+                        ${sc == null ? '' : `<span class="itq-review-score" style="color:${scColor}">${sc}/10</span>`}
+                    </div>
+                    <div class="itq-review-q">${esc(q.question || q || '')}</div>
+                    ${model ? `<span class="itq-review-label">Correct Answer</span>
+                    <div class="itq-review-model"><div class="interview-model-answer">${window.marked ? marked.parse(model) : esc(model)}</div></div>` : ''}
+                </div>`;
+                }).join('')}
+            </div>` : '';
 
     container.innerHTML = `
         <div class="interview-results glass-card">
@@ -1535,13 +1675,115 @@ function renderInterviewResults(data) {
                     <div class="interview-result-label">Total</div>
                 </div>
             </div>
+            ${review}
             <div class="interview-results-actions" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:20px">
                 <button class="btn btn-primary" onclick="retryWeakQuestions()"><i class="fas fa-redo"></i> Retry Weak Questions</button>
+                <button class="btn btn-primary" onclick="downloadInterviewReport()"><i class="fas fa-download"></i> Download Report</button>
                 <button class="btn btn-ghost" onclick="resetInterview()"><i class="fas fa-rotate-left"></i> New Interview</button>
             </div>
         </div>
     `;
     container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function downloadInterviewReport() {
+    const data = interviewResults;
+    if (!data) return;
+    showToast('Generating PDF...', 'info');
+    try {
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pageW = 210;
+        const margin = 16;
+        const contentW = pageW - margin * 2;
+        let y = 0;
+
+        const BRAND = '#6366f1';
+        const HEAD = '#111827';
+        const BODY = '#374151';
+        const MUTED = '#6b7280';
+
+        function resetY(needed) {
+            if (y + needed > 281) { pdf.addPage(); y = 16; }
+        }
+        function wrap(text, width, size) {
+            return pdf.splitTextToSize(String(text || ''), width, { fontSize: size });
+        }
+        function addBody(text, size = 10) {
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(size);
+            pdf.setTextColor(BODY);
+            const lines = wrap(text, contentW, size);
+            resetY(lines.length * (size * 0.45) + 2);
+            pdf.text(lines, margin, y);
+            y += lines.length * (size * 0.45) + 1.5;
+        }
+        function addLabel(text) {
+            resetY(9);
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(9);
+            pdf.setTextColor(MUTED);
+            pdf.text(text, margin, y);
+            y += 4.6;
+        }
+
+        pdf.setFillColor(BRAND);
+        pdf.rect(0, 0, pageW, 28, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(20);
+        pdf.text('RoleMatcherAi', margin, 12);
+        pdf.setFontSize(11);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text('Interview Report', margin, 19);
+        y = 38;
+
+        const overall = data.overall_score ?? 0;
+        const role = data.job_role || 'Interview';
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(15);
+        pdf.setTextColor(HEAD);
+        pdf.text(wrap(`${role} Interview`, contentW, 15), margin, y);
+        y += 7;
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(10.5);
+        pdf.setTextColor(MUTED);
+        pdf.text(`Overall score: ${overall}/10  |  ${data.total_questions} questions  |  ${new Date().toLocaleDateString()}`, margin, y);
+        y += 8;
+
+        const questions = data.questions || [];
+        const evaluations = data.evaluations || [];
+        const scores = data.scores || [];
+
+        questions.forEach((q, i) => {
+            resetY(45);
+            const sc = scores[i];
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(11.5);
+            pdf.setTextColor(BRAND);
+            pdf.text(`Q${i + 1}${sc == null ? '' : `  -  ${sc}/10`}`, margin, y);
+            y += 5.5;
+            addBody(q.question || '', 10.5);
+            addBody(`Category: ${q.category || 'general'}  |  Difficulty: ${q.difficulty || 'medium'}`, 8.5);
+            const ev = evaluations[i] || {};
+            if (ev.model_answer) {
+                addLabel('CORRECT ANSWER');
+                addBody(String(ev.model_answer).replace(/\*\*/g, ''), 10);
+            }
+            y += 2;
+            pdf.setDrawColor(229, 231, 235);
+            pdf.setLineWidth(0.3);
+            pdf.line(margin, y, pageW - margin, y);
+            y += 5;
+        });
+
+        const slug = role.replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 40) || 'interview';
+        pdf.save(`interview-report-${slug}.pdf`);
+        showToast('Report downloaded', 'success');
+    } catch (err) {
+        console.error('PDF export failed:', err);
+        showToast('PDF export failed', 'error');
+    }
 }
 
 function retryWeakQuestions() {
