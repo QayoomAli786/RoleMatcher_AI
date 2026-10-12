@@ -172,7 +172,7 @@ async def download_optimized_resume(
 ):
     """Download the tailored resume as a .docx file."""
     entry = get_generic(_optimized_resumes, optimized_id)
-    if entry is None or entry.get("user_id") != user.id:
+    if entry is None or str(entry.get("user_id")) != str(user.id):
         raise HTTPException(status_code=404, detail="Optimized resume not found")
 
     try:
@@ -201,7 +201,7 @@ async def get_optimized_resume(
     user: UserProfile = Depends(get_current_user),
 ):
     entry = get_generic(_optimized_resumes, optimized_id)
-    if entry is None or entry.get("user_id") != user.id:
+    if entry is None or str(entry.get("user_id")) != str(user.id):
         raise HTTPException(status_code=404, detail="Optimized resume not found")
     return entry
 

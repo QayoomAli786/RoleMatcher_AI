@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from backend.api.router import api_router
 from backend.core.config import get_settings
+from backend.core.store import init_store
 from backend.observability.tracing import TracingMiddleware
 from backend.security.rate_limit import RateLimitMiddleware
 from backend.services.llm_service import (
@@ -33,7 +34,8 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Startup / shutdown lifecycle."""
-    logger.info("Starting %s v%s (in-memory mode)", settings.app_name, settings.app_version)
+    init_store()
+    logger.info("Starting %s v%s (SQLite: %s)", settings.app_name, settings.app_version, settings.sqlite_path)
     yield
     logger.info("Shutdown complete")
 

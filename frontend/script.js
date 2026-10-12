@@ -4,13 +4,29 @@
 
 const API_BASE = '/api';
 
+// The landing page is public; every other section needs a signed-in user.
+const PUBLIC_SECTIONS = ['dashboard'];
+// Sections that work without an AI model/API key configured.
+const NO_KEY_SECTIONS = ['dashboard', 'settings', 'history', 'reviews'];
+
+// Section the user tried to open before being asked to sign in.
+let pendingSection = null;
+// Email awaiting a verification / reset code.
+let pendingOtpEmail = '';
+
 async function apiFetch(url, options = {}) {
     const headers = { ...(options.headers || {}) };
+    const token = localStorage.getItem('authToken');
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     const apiKey = localStorage.getItem('aiApiKey');
     if (apiKey) headers['X-API-Key'] = apiKey;
     const model = localStorage.getItem('aiModel');
     if (model) headers['X-Model'] = model;
     const res = await fetch(url, { ...options, headers });
+    if (res.status === 401 && token) {
+        clearAuth();
+        showAuthOverlay();
+    }
     if (!res.ok) {
         let msg = `Request failed (${res.status})`;
         try {
@@ -20,6 +36,380 @@ async function apiFetch(url, options = {}) {
         throw new Error(msg);
     }
     return res;
+}
+
+// ── Auth ────────────────────────────────────────────────────────────────────
+function getAuthToken() { return localStorage.getItem('authToken'); }
+
+function isLoggedIn() { return !!getAuthToken(); }
+
+function getCurrentUser() {
+    try { return JSON.parse(localStorage.getItem('authUser') || 'null'); } catch (_) { return null; }
+}
+
+function setAuth(token, user) {
+    localStorage.setItem('authToken', token);
+    localStorage.setItem('authUser', JSON.stringify(user || {}));
+    updateUserChip();
+}
+
+function clearAuth() {
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('authUser');
+    updateUserChip();
+}
+
+function updateUserChip() {
+    const user = isLoggedIn() ? getCurrentUser() : null;
+    const label = user ? (user.name || user.email || '') : '';
+    const nameEl = document.getElementById('user-name');
+    const emailEl = document.getElementById('user-email');
+    const avatarEl = document.getElementById('user-avatar');
+    const signin = document.getElementById('nav-signin-btn');
+    if (nameEl) nameEl.textContent = label;
+    if (emailEl) emailEl.textContent = user ? (user.email || '') : '';
+    if (avatarEl) avatarEl.textContent = label ? label.charAt(0).toUpperCase() : '';
+    if (signin) signin.classList.toggle('hidden', !!user);
+}
+
+function showAuthOverlay() {
+    const overlay = document.getElementById('auth-overlay');
+    if (!overlay) return;
+    if (overlay.classList.contains('hidden')) showAuthForm('login');
+    overlay.classList.remove('hidden');
+}
+
+function hideAuthOverlay() {
+    const overlay = document.getElementById('auth-overlay');
+    if (overlay) overlay.classList.add('hidden');
+}
+
+const AUTH_FORMS = {
+    login: 'auth-login-form',
+    signup: 'auth-signup-form',
+    otp: 'auth-otp-form',
+    forgot: 'auth-forgot-form',
+    reset: 'auth-reset-form',
+};
+
+const AUTH_HEADINGS = {
+    login: ['Welcome back', 'Sign in to continue to your dashboard.'],
+    signup: ['Create your account', 'Start free — no credit card required.'],
+    otp: ['Verify your email', 'Enter the 6-digit code we sent you.'],
+    forgot: ['Reset your password', 'Enter your email and we\u2019ll send a reset code.'],
+    reset: ['Set a new password', 'Enter the reset code and choose a new password.'],
+};
+
+const AUTH_FIRST_FIELD = {
+    login: 'login-email', signup: 'signup-name', otp: 'otp-code',
+    forgot: 'forgot-email', reset: 'reset-otp',
+};
+
+function showAuthForm(name) {
+    if (!AUTH_FORMS[name]) name = 'login';
+    Object.entries(AUTH_FORMS).forEach(([key, id]) => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('hidden', key !== name);
+    });
+    const tabs = document.getElementById('auth-tabs');
+    if (tabs) tabs.classList.toggle('hidden', name !== 'login' && name !== 'signup');
+    document.getElementById('auth-tab-login').classList.toggle('active', name === 'login');
+    document.getElementById('auth-tab-signup').classList.toggle('active', name === 'signup');
+    const [title, caption] = AUTH_HEADINGS[name];
+    document.getElementById('auth-title').textContent = title;
+    document.getElementById('auth-caption').textContent = caption;
+    const first = AUTH_FIRST_FIELD[name];
+    if (first) setTimeout(() => { const el = document.getElementById(first); if (el) el.focus(); }, 50);
+}
+
+async function postJson(url, payload) {
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || 'Request failed');
+    return body;
+}
+
+async function runAuth(btn, work) {
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Please wait...';
+    try {
+        return await work();
+    } catch (err) {
+        showToast(err.message || 'Something went wrong', 'error');
+        return null;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+}
+
+async function submitAuth(url, payload, btn) {
+    await runAuth(btn, async () => {
+        const body = await postJson(url, payload);
+        setAuth(body.token, body.user);
+        hideAuthOverlay();
+        showToast(`Welcome${body.user?.name ? ', ' + body.user.name : ''}!`, 'success');
+        afterLogin();
+    });
+}
+
+// ── Sign-up validation (Gmail-only + password strength meter) ──────────────
+const GMAIL_EMAIL_RE = /^[\w.+-]+@gmail\.com$/;
+const PW_RULES = [
+    { key: 'length',  label: '8+ characters',       test: (pw) => pw.length >= 8 },
+    { key: 'upper',   label: 'an uppercase letter', test: (pw) => /[A-Z]/.test(pw) },
+    { key: 'lower',   label: 'a lowercase letter',  test: (pw) => /[a-z]/.test(pw) },
+    { key: 'digit',   label: 'a number',            test: (pw) => /\d/.test(pw) },
+    { key: 'special', label: 'a symbol',            test: (pw) => /[^A-Za-z0-9]/.test(pw) },
+];
+
+function isGmailEmail(email) {
+    // Backend lowercases before checking, so compare case-insensitively too.
+    return GMAIL_EMAIL_RE.test(email.trim().toLowerCase());
+}
+
+function evaluatePasswordStrength(pw) {
+    const passed = PW_RULES.filter((r) => r.test(pw));
+    return {
+        ok: passed.length === PW_RULES.length,
+        passed,
+        missing: PW_RULES.filter((r) => !r.test(pw)).map((r) => r.label),
+        // 0 empty → 5 all rules; levels: weak <3, fair 3–4, strong 5
+        score: passed.length,
+    };
+}
+
+function showFieldError(inputId, errorId) {
+    document.getElementById(inputId)?.closest('.form-group')?.classList.add('has-error');
+    document.getElementById(errorId)?.classList.remove('hidden');
+}
+
+function hideFieldError(inputId, errorId) {
+    document.getElementById(inputId)?.closest('.form-group')?.classList.remove('has-error');
+    document.getElementById(errorId)?.classList.add('hidden');
+}
+
+function shakeElement(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('shake');
+    void el.offsetWidth; // restart the animation
+    el.classList.add('shake');
+}
+
+// Live email + password-strength feedback on the signup form.
+function initSignupValidation() {
+    const emailInput = document.getElementById('signup-email');
+    const pwInput = document.getElementById('signup-password');
+    const confirmInput = document.getElementById('signup-confirm');
+    const fill = document.getElementById('signup-strength-fill');
+    const label = document.getElementById('signup-strength-label');
+    const rulesEl = document.getElementById('signup-pw-rules');
+    if (!pwInput || !fill || !label) return;
+
+    const LEVELS = {
+        empty:  { cls: '',        text: '' },
+        weak:   { cls: 'weak',    text: 'Weak' },
+        fair:   { cls: 'fair',    text: 'Fair' },
+        good:   { cls: 'good',    text: 'Good' },
+        strong: { cls: 'strong',  text: 'Strong' },
+    };
+
+    const updateStrength = () => {
+        const pw = pwInput.value;
+        const { score, passed } = evaluatePasswordStrength(pw);
+        let level = 'empty';
+        if (pw) level = score <= 2 ? 'weak' : score === 3 ? 'fair' : score === 4 ? 'good' : 'strong';
+        fill.className = `pw-strength-fill ${LEVELS[level].cls}`;
+        label.className = `pw-strength-label ${LEVELS[level].cls}`;
+        label.textContent = LEVELS[level].text;
+        if (rulesEl) {
+            rulesEl.querySelectorAll('li').forEach((li) => {
+                const ok = passed.some((r) => r.key === li.dataset.rule);
+                li.classList.toggle('met', ok);
+            });
+        }
+    };
+
+    pwInput.addEventListener('input', updateStrength);
+    pwInput.addEventListener('focus', updateStrength);
+    updateStrength();
+
+    // Live Gmail check as soon as the user has typed something plausible.
+    emailInput?.addEventListener('input', () => {
+        const value = emailInput.value.trim();
+        if (value && value.includes('@') && !isGmailEmail(value)) {
+            showFieldError('signup-email', 'signup-email-error');
+        } else {
+            hideFieldError('signup-email', 'signup-email-error');
+        }
+    });
+
+    // Confirm-password match feedback.
+    confirmInput?.addEventListener('input', () => {
+        const group = confirmInput.closest('.form-group');
+        group?.classList.toggle('has-error', !!confirmInput.value && confirmInput.value !== pwInput.value);
+    });
+}
+
+function initAuth() {
+    document.getElementById('auth-tab-login').addEventListener('click', () => showAuthForm('login'));
+    document.getElementById('auth-tab-signup').addEventListener('click', () => showAuthForm('signup'));
+    document.getElementById('auth-close').addEventListener('click', hideAuthOverlay);
+    document.getElementById('auth-overlay').addEventListener('click', (e) => {
+        if (e.target.id === 'auth-overlay') hideAuthOverlay();
+    });
+
+    // Sign in
+    document.getElementById('auth-login-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const email = document.getElementById('login-email').value.trim();
+        const password = document.getElementById('login-password').value;
+        if (!email || !password) return showToast('Enter your email and password', 'error');
+        submitAuth(`${API_BASE}/auth/login`, { email, password }, document.getElementById('login-submit'));
+    });
+
+    // Sign up — the backend prints a verification code to the terminal
+    initSignupValidation();
+    document.getElementById('auth-signup-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = document.getElementById('signup-name').value.trim();
+        const email = document.getElementById('signup-email').value.trim();
+        const password = document.getElementById('signup-password').value;
+        const confirm = document.getElementById('signup-confirm').value;
+        if (!email || !password) return showToast('Enter your email and password', 'error');
+        // Gmail-only validation (mirrors the backend rule)
+        if (!isGmailEmail(email)) {
+            showFieldError('signup-email', 'signup-email-error');
+            return showToast('Only @gmail.com email addresses are allowed', 'error');
+        }
+        hideFieldError('signup-email', 'signup-email-error');
+        // Strong-password gate — signup is blocked until every rule passes
+        const strength = evaluatePasswordStrength(password);
+        if (!strength.ok) {
+            shakeElement('signup-submit');
+            return showToast(`Password too weak — ${strength.missing.join(', ')}`, 'error');
+        }
+        if (password !== confirm) {
+            shakeElement('signup-submit');
+            return showToast('Passwords do not match', 'error');
+        }
+        runAuth(document.getElementById('signup-submit'), async () => {
+            const body = await postJson(`${API_BASE}/auth/signup`, { name, email, password });
+            pendingOtpEmail = body.email || email;
+            showToast(`Verification code sent to ${pendingOtpEmail} — check the server terminal`, 'success');
+            showAuthForm('otp');
+            document.getElementById('auth-caption').textContent = `Enter the 6-digit code sent to ${pendingOtpEmail}.`;
+        });
+    });
+
+    // Verify the sign up code — creates the account
+    document.getElementById('auth-otp-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const otp = document.getElementById('otp-code').value.trim();
+        if (!otp) return showToast('Enter the verification code', 'error');
+        runAuth(document.getElementById('otp-submit'), async () => {
+            const body = await postJson(`${API_BASE}/auth/verify-otp`, { email: pendingOtpEmail, otp });
+            setAuth(body.token, body.user);
+            hideAuthOverlay();
+            showToast(`Welcome${body.user?.name ? ', ' + body.user.name : ''}!`, 'success');
+            afterLogin();
+        });
+    });
+
+    // Forgot password — prints a reset code to the terminal
+    document.getElementById('auth-forgot-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const email = document.getElementById('forgot-email').value.trim();
+        if (!email) return showToast('Enter your email', 'error');
+        runAuth(document.getElementById('forgot-submit'), async () => {
+            pendingOtpEmail = email;
+            await postJson(`${API_BASE}/auth/forgot-password`, { email });
+            showToast(`If ${pendingOtpEmail} is registered, a reset code was sent — check the terminal`, 'success');
+            showAuthForm('reset');
+            document.getElementById('auth-caption').textContent = `Enter the reset code sent to ${pendingOtpEmail}.`;
+        });
+    });
+
+    // Reset password with the emailed code
+    document.getElementById('auth-reset-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const otp = document.getElementById('reset-otp').value.trim();
+        const newPassword = document.getElementById('reset-password').value;
+        if (!otp || !newPassword) return showToast('Enter the code and a new password', 'error');
+        if (newPassword.length < 6) return showToast('Password must be at least 6 characters', 'error');
+        runAuth(document.getElementById('reset-submit'), async () => {
+            await postJson(`${API_BASE}/auth/reset-password`, { email: pendingOtpEmail, otp, new_password: newPassword });
+            showToast('Password updated — please sign in', 'success');
+            document.getElementById('auth-reset-form').reset();
+            showAuthForm('login');
+        });
+    });
+
+    // Resend / back links between the steps
+    const resend = (btn, purpose) => runAuth(btn, async () => {
+        await postJson(`${API_BASE}/auth/resend-otp`, { email: pendingOtpEmail, purpose });
+        showToast(`New code sent to ${pendingOtpEmail} — check the server terminal`, 'success');
+    });
+    document.getElementById('otp-resend').addEventListener('click', (e) => resend(e.currentTarget, 'signup'));
+    document.getElementById('reset-resend').addEventListener('click', (e) => resend(e.currentTarget, 'reset'));
+    document.getElementById('otp-back').addEventListener('click', () => showAuthForm('signup'));
+    document.getElementById('reset-back').addEventListener('click', () => showAuthForm('forgot'));
+    document.getElementById('forgot-back').addEventListener('click', () => showAuthForm('login'));
+    document.getElementById('auth-forgot-link').addEventListener('click', () => showAuthForm('forgot'));
+
+    // Password show / hide
+    document.querySelectorAll('.toggle-password').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const input = document.getElementById(btn.dataset.target);
+            if (!input) return;
+            const reveal = input.type === 'password';
+            input.type = reveal ? 'text' : 'password';
+            btn.querySelector('i').classList.toggle('fa-eye', !reveal);
+            btn.querySelector('i').classList.toggle('fa-eye-slash', reveal);
+            btn.title = reveal ? 'Hide password' : 'Show password';
+        });
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', logout);
+    document.getElementById('nav-signin-btn').addEventListener('click', showAuthOverlay);
+    updateUserChip();
+}
+
+async function logout() {
+    try { await apiFetch(`${API_BASE}/auth/logout`, { method: 'POST' }); } catch (_) { /* ignore */ }
+    clearAuth();
+    location.reload();
+}
+
+async function restoreSession() {
+    // No token → stay on the public landing page, no overlay.
+    if (!getAuthToken()) return false;
+    try {
+        const user = await apiFetch(`${API_BASE}/auth/me`).then(r => r.json());
+        localStorage.setItem('authUser', JSON.stringify(user));
+        updateUserChip();
+        return true;
+    } catch (_) {
+        clearAuth();
+        return false;
+    }
+}
+
+function afterLogin() {
+    updateUserChip();
+    loadPublicContent();
+    // Send the user where they were heading before the sign-in prompt.
+    if (pendingSection) {
+        const target = pendingSection;
+        pendingSection = null;
+        navigateTo(target);
+    }
 }
 
 let resumeData = null;
@@ -68,8 +458,16 @@ function hideLoading() {
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 function navigateTo(section) {
+    // 1. Gate everything but the public landing page behind sign in.
+    if (!isLoggedIn() && !PUBLIC_SECTIONS.includes(section)) {
+        pendingSection = section;
+        showAuthOverlay();
+        return;
+    }
+
+    // 2. Ask for an AI key only for sections that actually need one.
     const overlay = document.getElementById('api-key-overlay');
-    if (section === 'settings') {
+    if (NO_KEY_SECTIONS.includes(section)) {
         if (overlay) overlay.classList.add('hidden');
     } else if (!isApiKeyConfigured()) {
         showToast('Please set your API key and model in Settings first', 'error');
@@ -88,6 +486,7 @@ function navigateTo(section) {
     target.classList.add('active');
     const navLink = document.querySelector(`.nav-link[data-section="${section}"]`);
     if (navLink) navLink.classList.add('active');
+    if (section === 'history') loadHistory();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     const navCenter = document.querySelector('.nav-center');
     if (navCenter) navCenter.classList.remove('open');
@@ -1940,6 +2339,9 @@ function initReviews() {
     if (submitBtn) {
         submitBtn.addEventListener('click', submitReview);
     }
+}
+
+function loadPublicContent() {
     loadReviews();
     loadHomeTestimonials();
 }
@@ -2051,7 +2453,55 @@ async function loadHomeTestimonials() {
     }
 }
 
+// ── History ─────────────────────────────────────────────────────────────────
+function initHistory() {
+    const refresh = document.getElementById('history-refresh-btn');
+    if (refresh) refresh.addEventListener('click', loadHistory);
+}
+
+function formatHistoryDate(iso) {
+    try {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch (_) { return ''; }
+}
+
+function renderHistoryItem(item) {
+    return `
+        <div class="history-card glass-card">
+            <div class="history-icon"><i class="fas ${item.icon || 'fa-circle'}"></i></div>
+            <div class="history-body">
+                <div class="history-title">${esc(item.title || item.label)}</div>
+                <div class="history-meta">
+                    <span class="history-type">${esc(item.label || item.type)}</span>
+                    <span>${formatHistoryDate(item.created_at)}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+async function loadHistory() {
+    const list = document.getElementById('history-list');
+    if (!list) return;
+    list.innerHTML = '<div class="history-empty glass-card"><i class="fas fa-spinner fa-spin"></i> Loading history...</div>';
+    try {
+        const data = await apiFetch(`${API_BASE}/history`).then(r => r.json());
+        const items = data.items || [];
+        if (!items.length) {
+            list.innerHTML = '<div class="history-empty glass-card"><i class="fas fa-clock"></i> No activity yet. Your resumes, cover letters, job matches and more will appear here.</div>';
+            return;
+        }
+        list.innerHTML = items.map(renderHistoryItem).join('');
+    } catch (err) {
+        list.innerHTML = `<div class="history-empty glass-card"><i class="fas fa-exclamation-circle"></i> ${esc(err.message || 'Could not load history.')}</div>`;
+    }
+}
+
 // ── Chat ────────────────────────────────────────────────────────────────────
+let chatConversationId = null;
+
 function initChat() {
     const fab = document.getElementById('chat-fab');
     const widget = document.getElementById('chat-widget');
@@ -2060,6 +2510,11 @@ function initChat() {
     const sendBtn = document.getElementById('send-chat-btn');
 
     fab.addEventListener('click', () => {
+        if (!isLoggedIn()) {
+            pendingSection = 'chat';
+            showAuthOverlay();
+            return;
+        }
         fab.classList.toggle('active');
         widget.classList.toggle('open');
     });
@@ -2106,8 +2561,9 @@ async function sendMessage() {
         const data = await apiFetch(`${API_BASE}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: msg }),
+            body: JSON.stringify({ message: msg, conversation_id: chatConversationId }),
         }).then(r => r.json());
+        if (data.conversation_id) chatConversationId = data.conversation_id;
         meta.innerHTML = '';
         const reply = data.reply || data.response || data.message || 'I could not process that request.';
         messagesDiv.innerHTML += `
@@ -2170,11 +2626,11 @@ function initLoader() {
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     initLoader();
     initNavigation();
     initSettings();
-    checkApiKeyRequired();
+    initAuth();
     initResume();
     initJobs();
     initCareer();
@@ -2182,11 +2638,17 @@ document.addEventListener('DOMContentLoaded', () => {
     initCoverLetter();
     initChat();
     initReviews();
+    initHistory();
     initFAQ();
 
     // Settings toggle icon
     const settingsToggle = document.getElementById('settings-toggle');
     if (settingsToggle) {
         settingsToggle.addEventListener('click', () => navigateTo('settings'));
+    }
+
+    // Gate the app behind sign in / sign up
+    if (await restoreSession()) {
+        afterLogin();
     }
 });

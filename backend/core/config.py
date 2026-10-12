@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # ── Redis (optional — used by the rate limiter when reachable) ──────────
     redis_url: str = "redis://localhost:6379/0"
 
+    # ── SQLite (relative paths resolve to the repo root) ────────────────────
+    sqlite_path: str = "data/rolematcher.db"
+
     # ── LLM Providers ───────────────────────────────────────────────────────
     gemini_api_key: str = ""
     groq_api_key: str = ""

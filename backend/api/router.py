@@ -11,6 +11,7 @@ from backend.api.cover_letter import router as cover_letter_router
 from backend.api.ats import router as ats_router
 from backend.api.career import router as career_router
 from backend.api.chat import router as chat_router
+from backend.api.history import router as history_router
 from backend.api.interview import router as interview_router
 from backend.api.jobs import router as jobs_router
 from backend.api.resume import router as resume_router
@@ -28,6 +29,7 @@ api_router.include_router(ats_router, tags=["ATS"])
 api_router.include_router(career_router, tags=["Career"])
 api_router.include_router(interview_router, tags=["Interviews"])
 api_router.include_router(chat_router, tags=["Chat"])
+api_router.include_router(history_router, tags=["History"])
 api_router.include_router(applications_router, tags=["Applications"])
 api_router.include_router(cover_letter_router, tags=["Cover Letters"])
 api_router.include_router(reviews_router, tags=["Reviews"])

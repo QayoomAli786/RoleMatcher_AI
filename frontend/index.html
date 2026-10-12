@@ -55,9 +55,13 @@
                         <button class="nav-link" data-section="interview">Interview</button>
                         <button class="nav-link" data-section="cover-letter">Cover Letter</button>
                         <button class="nav-link" data-section="reviews">Reviews</button>
+                        <button class="nav-link" data-section="history">History</button>
                     </div>
                 </div>
                 <div class="nav-right">
+                    <button class="btn btn-primary btn-sm nav-signin-btn" id="nav-signin-btn">
+                        <i class="fas fa-right-to-bracket"></i> Sign In
+                    </button>
                     <button class="hamburger-btn" id="hamburger-btn" aria-label="Menu">
                         <span></span><span></span><span></span>
                     </button>
@@ -858,6 +862,20 @@
                 </div>
             </section>
 
+            <!-- History Section -->
+            <section id="section-history" class="section">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title"><i class="fas fa-history"></i> History</h2>
+                        <p class="section-subtitle">Everything you've created with RoleMatcherAi</p>
+                    </div>
+                    <button class="btn btn-ghost btn-sm" id="history-refresh-btn">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                </div>
+                <div class="history-list" id="history-list"></div>
+            </section>
+
             <!-- Settings Section -->
             <section id="section-settings" class="section">
                 <div class="section-header">
@@ -867,6 +885,20 @@
                     </div>
                 </div>
                 <div class="settings-content">
+                    <!-- Account Card -->
+                    <div class="settings-section-card glass-card">
+                        <h3><i class="fas fa-user-circle"></i> Account</h3>
+                        <div class="account-row">
+                            <div class="account-avatar" id="user-avatar"></div>
+                            <div class="account-meta">
+                                <div class="account-name" id="user-name"></div>
+                                <div class="account-email" id="user-email"></div>
+                            </div>
+                            <button class="btn btn-danger btn-sm account-signout" id="logout-btn">
+                                <i class="fas fa-sign-out-alt"></i> Sign Out
+                            </button>
+                        </div>
+                    </div>
                     <!-- AI Model Card -->
                     <div class="settings-section-card glass-card">
                         <h3><i class="fas fa-robot"></i> AI Model</h3>
@@ -948,8 +980,177 @@
         </main>
     </div>
 
+    <!-- Auth Overlay (sign in / sign up) -->
+    <div class="auth-overlay hidden" id="auth-overlay">
+        <div class="auth-card">
+            <button class="auth-close" id="auth-close" title="Close" aria-label="Close">
+                <i class="fas fa-times"></i>
+            </button>
+
+            <aside class="auth-brand">
+                <div class="auth-brand-logo">
+                    <img src="logo.png" alt="RoleMatcherAi" class="logo-img-loader">
+                    <span>RoleMatcher<span class="accent">AI</span></span>
+                </div>
+                <h2 class="auth-brand-title">Your AI-powered<br>career command center</h2>
+                <p class="auth-brand-sub">Everything you need to land your next role — in one place.</p>
+                <ul class="auth-benefits">
+                    <li><i class="fas fa-circle-check"></i> AI resume analysis &amp; ATS scoring</li>
+                    <li><i class="fas fa-circle-check"></i> Personalized job matches</li>
+                    <li><i class="fas fa-circle-check"></i> Interview prep &amp; cover letters</li>
+                    <li><i class="fas fa-circle-check"></i> Your full activity history</li>
+                </ul>
+            </aside>
+
+            <section class="auth-panel">
+                <div class="auth-tabs" id="auth-tabs">
+                    <button class="auth-tab active" data-tab="login" id="auth-tab-login">Sign In</button>
+                    <button class="auth-tab" data-tab="signup" id="auth-tab-signup">Sign Up</button>
+                </div>
+
+                <h3 class="auth-title" id="auth-title">Welcome back</h3>
+                <p class="auth-caption" id="auth-caption">Sign in to continue to your dashboard.</p>
+
+                <form class="auth-form" id="auth-login-form">
+                    <div class="form-group">
+                        <label>Email</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-envelope"></i>
+                            <input type="email" id="login-email" placeholder="you@example.com" autocomplete="email">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-lock"></i>
+                            <input type="password" id="login-password" class="has-toggle" placeholder="Your password" autocomplete="current-password">
+                            <button type="button" class="toggle-password" data-target="login-password" title="Show password" aria-label="Show password"><i class="fas fa-eye"></i></button>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-lg auth-submit" id="login-submit">
+                        <i class="fas fa-right-to-bracket"></i> Sign In
+                    </button>
+                    <p class="auth-forgot"><button type="button" id="auth-forgot-link">Forgot password?</button></p>
+                </form>
+
+                <form class="auth-form hidden" id="auth-signup-form">
+                    <div class="form-group">
+                        <label>Name</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-user"></i>
+                            <input type="text" id="signup-name" placeholder="Your name" autocomplete="name">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Email <span class="auth-hint">Gmail only</span></label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-envelope"></i>
+                            <input type="email" id="signup-email" placeholder="you@gmail.com" autocomplete="email">
+                        </div>
+                        <p class="field-error hidden" id="signup-email-error"><i class="fas fa-circle-exclamation"></i> Only @gmail.com addresses are allowed</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Password <span class="auth-hint">Strong password required</span></label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-lock"></i>
+                            <input type="password" id="signup-password" class="has-toggle" placeholder="Create a password" autocomplete="new-password">
+                            <button type="button" class="toggle-password" data-target="signup-password" title="Show password" aria-label="Show password"><i class="fas fa-eye"></i></button>
+                        </div>
+                        <div class="pw-strength" id="signup-strength" aria-live="polite">
+                            <div class="pw-strength-track">
+                                <div class="pw-strength-fill" id="signup-strength-fill"></div>
+                            </div>
+                            <span class="pw-strength-label" id="signup-strength-label"></span>
+                        </div>
+                        <ul class="pw-rules" id="signup-pw-rules">
+                            <li data-rule="length"><i class="fas fa-circle"></i> 8+ characters</li>
+                            <li data-rule="upper"><i class="fas fa-circle"></i> Uppercase letter</li>
+                            <li data-rule="lower"><i class="fas fa-circle"></i> Lowercase letter</li>
+                            <li data-rule="digit"><i class="fas fa-circle"></i> Number</li>
+                            <li data-rule="special"><i class="fas fa-circle"></i> Symbol (!@#$...)</li>
+                        </ul>
+                    </div>
+                    <div class="form-group">
+                        <label>Confirm Password</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-lock"></i>
+                            <input type="password" id="signup-confirm" class="has-toggle" placeholder="Re-enter your password" autocomplete="new-password">
+                            <button type="button" class="toggle-password" data-target="signup-confirm" title="Show password" aria-label="Show password"><i class="fas fa-eye"></i></button>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-lg auth-submit" id="signup-submit">
+                        <i class="fas fa-user-plus"></i> Create Account
+                    </button>
+                </form>
+
+                <form class="auth-form hidden" id="auth-otp-form">
+                    <div class="auth-note"><i class="fas fa-terminal"></i> Demo mode — the 6-digit code is printed in the <b>server terminal</b>.</div>
+                    <div class="form-group">
+                        <label>Verification Code</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-shield-halved"></i>
+                            <input type="text" id="otp-code" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-lg auth-submit" id="otp-submit">
+                        <i class="fas fa-check"></i> Verify &amp; Create Account
+                    </button>
+                    <div class="auth-links">
+                        <button type="button" id="otp-resend">Resend code</button>
+                        <button type="button" id="otp-back">Back</button>
+                    </div>
+                </form>
+
+                <form class="auth-form hidden" id="auth-forgot-form">
+                    <div class="auth-note"><i class="fas fa-terminal"></i> Demo mode — the reset code is printed in the <b>server terminal</b>.</div>
+                    <div class="form-group">
+                        <label>Email</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-envelope"></i>
+                            <input type="email" id="forgot-email" placeholder="you@example.com" autocomplete="email">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-lg auth-submit" id="forgot-submit">
+                        <i class="fas fa-paper-plane"></i> Send Reset Code
+                    </button>
+                    <div class="auth-links">
+                        <button type="button" id="forgot-back">Back to sign in</button>
+                    </div>
+                </form>
+
+                <form class="auth-form hidden" id="auth-reset-form">
+                    <div class="auth-note"><i class="fas fa-terminal"></i> Demo mode — the reset code is printed in the <b>server terminal</b>.</div>
+                    <div class="form-group">
+                        <label>Reset Code</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-shield-halved"></i>
+                            <input type="text" id="reset-otp" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>New Password <span class="auth-hint">Min 6 characters</span></label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-lock"></i>
+                            <input type="password" id="reset-password" class="has-toggle" placeholder="New password" autocomplete="new-password">
+                            <button type="button" class="toggle-password" data-target="reset-password" title="Show password" aria-label="Show password"><i class="fas fa-eye"></i></button>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-lg auth-submit" id="reset-submit">
+                        <i class="fas fa-key"></i> Reset Password
+                    </button>
+                    <div class="auth-links">
+                        <button type="button" id="reset-resend">Resend code</button>
+                        <button type="button" id="reset-back">Back</button>
+                    </div>
+                </form>
+
+                <p class="auth-foot">Your data is stored securely and never shared.</p>
+            </section>
+        </div>
+    </div>
+
     <!-- API Key Required Overlay -->
-    <div class="api-key-overlay" id="api-key-overlay">
+    <div class="api-key-overlay hidden" id="api-key-overlay">
         <div class="api-key-overlay-card glass-card">
             <div class="api-key-overlay-icon"><i class="fas fa-key"></i></div>
             <h2>API Key Required</h2>
