@@ -611,8 +611,13 @@ function initResume() {
 }
 
 async function uploadResume(file) {
-    if (file.type !== 'application/pdf') {
-        showToast('Please upload a PDF file', 'error');
+    const allowedTypes = [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'text/plain',
+    ];
+    if (!allowedTypes.includes(file.type)) {
+        showToast('Please upload a PDF, DOCX, or TXT file', 'error');
         return;
     }
     showLoading('Uploading resume...');

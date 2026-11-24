@@ -129,8 +129,7 @@ Product / Resources / Company links and social icons — all are placeholder `#`
 
 ## 3. Resume
 
-Upload and parse your resume (`section-resume`). **The web UI accepts PDF files only**
-(the backend parser itself also understands DOCX/TXT).
+Upload and parse your resume (`section-resume`). **The web UI accepts PDF, DOCX, and TXT files** (the backend parser supports all three).
 
 ### Before upload
 
@@ -140,10 +139,11 @@ Upload and parse your resume (`section-resume`). **The web UI accepts PDF files 
 | **Choose File** button | Opens the file picker (same as clicking the zone). |
 | **Drag & drop** onto the zone | Uploads the dropped file (zone highlights while dragging). |
 | **Tips card** | Static advice (1–2 pages, action verbs, metrics, keywords) — shown only before upload. |
+| **Accepted files hint** | "PDF, DOCX, or TXT files" shown below the upload button. |
 
 ### Upload flow
 
-1. Client-side check: only `application/pdf` is accepted; anything else shows an error toast.
+1. Client-side check: only `application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, and `text/plain` are accepted; anything else shows an error toast.
 2. `POST /api/resumes` with the file (`FormData`).
 3. On success: the upload zone and tips hide; the **resume card** and **next steps** appear;
    a success toast shows; dashboard journey progress updates.
@@ -338,7 +338,7 @@ Submit and read user reviews (`section-reviews`).
 
 ## 11. Settings
 
-Model and credential configuration (`section-settings`) — the only screen reachable
+Model, credential, and email configuration (`section-settings`) — the only screen reachable
 without an API key.
 
 | Control | What it does |
@@ -348,6 +348,24 @@ without an API key.
 | **Exact Model Name** input | Appears only when "Custom" is selected. Format `provider/model-name` (e.g. `gemini/gemini-2.5-pro`). Auto-focused when shown. |
 | **API Key** input | Password-masked optional override. |
 | **Save Model Settings** button | Validates that a model is chosen (error toast otherwise), then saves `aiProvider`, `aiModel`, and (if entered) `aiApiKey` to `localStorage`, toasts "Model settings saved", and re-evaluates the API Key overlay (it disappears once both key and model exist). |
+
+### Email (SMTP) Configuration
+
+Verification emails (sign-up, password reset) are sent via SMTP. Configure in your `.env`:
+
+| Variable | Description | Example |
+|---|---|---|
+| `CC_SMTP_HOST` | SMTP server hostname | `smtp.gmail.com` |
+| `CC_SMTP_PORT` | SMTP port (465 for SSL, 587 for STARTTLS) | `465` |
+| `CC_SMTP_USER` | SMTP username (your email) | `your-email@gmail.com` |
+| `CC_SMTP_PASSWORD` | SMTP password or app password | `"your-app-password"` |
+| `CC_SMTP_FROM_EMAIL` | Sender email (defaults to SMTP user) | `noreply@yourdomain.com` |
+| `CC_SMTP_FROM_NAME` | Sender display name | `RoleMatcherAI` |
+| `CC_SMTP_USE_TLS` | `true` for STARTTLS (port 587), `false` for implicit SSL (port 465) | `false` |
+
+**Gmail notes:** Use an **App Password** (not your regular password). Enable 2FA first, then generate an App Password in Google Account → Security → App Passwords. Port 465 (SSL) is recommended over 587 (STARTTLS) to avoid firewall issues.
+
+If SMTP is not configured, verification codes are printed to the server terminal (development fallback).
 
 **How it is used:** every API call attaches `X-API-Key` and `X-Model` headers from
 `localStorage`, so the backend routes each request to your chosen provider/model. Saved
@@ -378,7 +396,7 @@ scores, career plans) — see §13.
 Each UI action maps to a LangGraph workflow or deterministic engine:
 
 ### Resume parsing (`resume_parser.py`)
-PDF (PyMuPDF) or DOCX (python-docx) → raw text → section splitting (summary, experience,
+PDF (PyMuPDF), DOCX (python-docx), or TXT → raw text → section splitting (summary, experience,
 education, skills, projects, certifications) → structured profile with contact extraction
 (email/phone/LinkedIn), skill detection against an alias dictionary, date-normalized
 experience entries, and education/GPA parsing. Deduplicated by content hash.
@@ -431,9 +449,10 @@ returns an empty list. ATS analysis in the UI runs through `POST /api/jobs/{id}/
 which invokes the same `ats_graph` pipeline.
 
 ### Security (`security/`)
-- **Auth** — single guest session per server run; per-request `X-API-Key` / `X-Model` supply LLM credentials.
+- **Auth** — Email/password accounts with SQLite-backed session tokens. Sign-up requires a Gmail address and a strong password (8+ chars, upper, lower, digit, symbol). Verification codes are sent via **SMTP** (configurable in `.env`) with a styled HTML email; falls back to server-terminal print if SMTP is not configured.
 - **Rate limiting** — 60 requests/minute/IP by default (Redis when `CC_REDIS_URL` is set, in-memory fallback otherwise). Rejections return `429` with `X-RateLimit-*` headers.
 - **Sanitization** — user-supplied text is sanitized before it reaches templates/prompts.
+- **File upload validation** — magic-byte checks for PDF/DOCX/TXT; size limit via `CC_MAX_UPLOAD_SIZE_MB`.
 
 ### Observability (`observability/`)
 Per-request tracing and runtime metrics, surfaced at `GET /api/admin/stats`.
@@ -459,7 +478,14 @@ All endpoints are prefixed with `/api`. Optional headers on every request:
 | GET | `/api/health` | Service health and version. |
 | GET | `/api/admin/stats` | Runtime statistics (requests, traces). |
 | POST | `/api/admin/refresh-jobs` | Force-refresh the job cache. |
-| GET | `/api/auth/me` | Current guest user profile. |
+| POST | `/api/auth/signup` | Start sign-up — sends verification code via SMTP (or terminal fallback). |
+| POST | `/api/auth/verify-otp` | Complete sign-up — verify code and create account. |
+| POST | `/api/auth/resend-otp` | Resend verification/reset code. |
+| POST | `/api/auth/forgot-password` | Request password reset code. |
+| POST | `/api/auth/reset-password` | Reset password with code. |
+| POST | `/api/auth/login` | Sign in — returns bearer token. |
+| POST | `/api/auth/logout` | Sign out — revokes token. |
+| GET | `/api/auth/me` | Current user profile. |
 | POST | `/api/resumes` | Upload & parse a resume (PDF/DOCX/TXT). |
 | GET | `/api/resumes` | List parsed resumes. |
 | GET | `/api/resumes/{id}` | Fetch one parsed resume. |
@@ -507,13 +533,15 @@ All endpoints are prefixed with `/api`. Optional headers on every request:
 | Symptom | Cause / fix |
 |---|---|
 | "API Key Required" overlay won't go away | You saved a model but no key (or vice versa). Both `aiModel` and `aiApiKey` must be set — save them in Settings. |
-| "Please upload a PDF file" | The web upload zone accepts PDF only, even though the API also parses DOCX. |
+| "Please upload a PDF file" | The web upload zone accepts PDF, DOCX, and TXT only (the API parses all three). |
 | ATS / AI Resume Builder buttons show a toast instead of working | No resume uploaded in this session — upload one on the Resume page first. |
 | "From My Resume" shows red status | Same as above: upload a resume, or use Manual Search. |
 | "No jobs found for this role" | Broaden keywords, clear the location (use "All Countries"), or set Work Mode to Any. Sources may also be rate-limited. |
 | `429` responses | Hit the 60 req/min/IP rate limit — wait a minute. |
 | Plan/interview generation fails | Usually an LLM error: verify the API key is valid for the selected provider, or switch models in Settings. |
 | "Please enter a valid profession name" | The career target field must look like a real job title (letters only, ≥2 characters, not one repeated character). |
+| Verification email not received | Check SMTP settings in `.env`. For Gmail, use port 465 with `CC_SMTP_USE_TLS=false` and an App Password. If SMTP fails, codes print to the server terminal (look for "RoleMatcherAI Sign up verification code"). |
+| SMTP timeout (WinError 10060) | Firewall/antivirus/ISP blocking outbound SMTP. Test with `Test-NetConnection smtp.gmail.com -Port 465` in PowerShell. Allow Python through Windows Firewall or use terminal fallback. |
 | Background animation feels heavy | The workflow canvas and blobs are decorative; they can be removed without affecting functionality. |
 
 ---

@@ -11,12 +11,17 @@ import hmac
 import json
 import logging
 import secrets
+import smtplib
+import ssl
 import uuid
 from datetime import datetime, timedelta, timezone
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 from fastapi import Header, HTTPException, status
 
 from backend.core import db
+from backend.core.config import get_settings
 from backend.core.schemas import UserProfile
 
 _PBKDF2_ITERATIONS = 200_000
@@ -25,6 +30,7 @@ _SIGNUP = "signup"
 _RESET = "reset"
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 def _hash_password(password: str, salt: bytes | None = None) -> str:
@@ -76,13 +82,142 @@ def _strong_password(password: str) -> bool:
     )
 
 
+def _send_email_smtp(to_email: str, subject: str, body_text: str, body_html: str | None = None) -> bool:
+    """Send email via SMTP. Returns True on success, False on failure."""
+    if not settings.smtp_host or not settings.smtp_user or not settings.smtp_password:
+        logger.warning("SMTP not configured — email not sent")
+        return False
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = f"{settings.smtp_from_name} <{settings.smtp_from_email or settings.smtp_user}>"
+        msg["To"] = to_email
+
+        part_text = MIMEText(body_text, "plain", "utf-8")
+        msg.attach(part_text)
+
+        if body_html:
+            part_html = MIMEText(body_html, "html", "utf-8")
+            msg.attach(part_html)
+
+        context = ssl.create_default_context()
+
+        # Port 465 = implicit TLS (SSL), Port 587 = explicit TLS (STARTTLS)
+        if settings.smtp_port == 465:
+            with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, context=context) as server:
+                server.login(settings.smtp_user, settings.smtp_password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+                if settings.smtp_use_tls:
+                    server.starttls(context=context)
+                server.login(settings.smtp_user, settings.smtp_password)
+                server.send_message(msg)
+
+        logger.info("Email sent successfully to %s", to_email)
+        return True
+
+    except Exception as e:
+        logger.error("Failed to send email to %s: %s", to_email, e)
+        return False
+
+
 def _deliver_code(email: str, purpose: str, code: str) -> None:
-    """No email provider here — print the code so it shows up in the server terminal."""
+    """Send the verification code via SMTP. Falls back to terminal print if SMTP not configured."""
     label = "Sign up verification" if purpose == _SIGNUP else "Password reset"
+    subject = f"RoleMatcherAI — {label} code"
+    body_text = (
+        f"Your {label.lower()} code is:\n\n"
+        f"    {code}\n\n"
+        f"This code is valid for {_OTP_TTL_MINUTES} minutes.\n\n"
+        f"If you didn't request this, please ignore this email.\n"
+        f"— RoleMatcherAI"
+    )
+    # Pre-header text for email clients
+    preheader = f"Your {label.lower()} code: {code} — valid for {_OTP_TTL_MINUTES} minutes"
+    
+    body_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>{subject}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+    {{ 
+      body {{ margin:0; padding:0; background:#f8fafc; }}
+      .wrapper {{ min-height:100vh; padding:40px 20px; }}
+      .card {{ background:#ffffff; border-radius:16px; box-shadow:0 4px 24px rgba(15,23,42,0.08); overflow:hidden; max-width:480px; margin:0 auto; }}
+      .header {{ background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%); padding:32px; text-align:center; position:relative; }}
+      .header::after {{ content:''; position:absolute; bottom:0; left:0; right:0; height:4px; background:linear-gradient(90deg,#22c55e,#16a34a); }}
+      .logo {{ font-family:'Outfit',sans-serif; font-weight:700; font-size:24px; color:#fff; letter-spacing:-0.5px; }}
+      .logo span {{ color:#22c55e; }}
+      .content {{ padding:40px 32px; text-align:center; }}
+      .greeting {{ font-family:'Inter',sans-serif; font-size:16px; color:#64748b; margin:0 0 8px; }}
+      .title {{ font-family:'Outfit',sans-serif; font-weight:700; font-size:24px; color:#0f172a; margin:0 0 16px; letter-spacing:-0.5px; }}
+      .code-box {{ background:linear-gradient(135deg,#f0fdf4 0%,#dcfce7 100%); border:2px solid #bbf7d0; border-radius:12px; padding:24px; margin:24px 0; position:relative; overflow:hidden; }}
+      .code-box::before {{ content:''; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,#22c55e,#16a34a); }}
+      .code-label {{ font-family:'Inter',sans-serif; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:1.5px; color:#166534; margin-bottom:8px; }}
+      .code {{ font-family:'JetBrains Mono','Fira Code',monospace; font-size:36px; font-weight:700; letter-spacing:8px; color:#166534; word-break:break-all; }}
+      .meta {{ font-family:'Inter',sans-serif; font-size:14px; color:#64748b; margin:24px 0 0; line-height:1.6; }}
+      .meta strong {{ color:#334155; }}
+      .divider {{ border:none; border-top:1px solid #e2e8f0; margin:32px 0; }}
+      .footer {{ font-family:'Inter',sans-serif; font-size:12px; color:#94a3b8; text-align:center; padding:0 32px 32px; line-height:1.6; }}
+      .footer a {{ color:#22c55e; text-decoration:none; }}
+      .security-note {{ background:#fef3c7; border:1px solid #fde68a; border-radius:8px; padding:12px 16px; margin:16px 0; font-size:13px; color:#92400e; }}
+      @media (max-width:480px) {{
+        .card {{ border-radius:12px; }}
+        .content {{ padding:32px 24px; }}
+        .code {{ font-size:28px; letter-spacing:4px; }}
+        .title {{ font-size:20px; }}
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="card">
+      <div class="header">
+        <div class="logo">RoleMatcher<span>AI</span></div>
+      </div>
+      <div class="content">
+        <p class="greeting">Hi there,</p>
+        <h1 class="title">Your {label.lower()} code</h1>
+        
+        <div class="code-box">
+          <p class="code-label">Verification Code</p>
+          <p class="code">{code}</p>
+        </div>
+        
+        <p class="meta">This code is valid for <strong>{_OTP_TTL_MINUTES} minutes</strong>.</p>
+        
+        <div class="security-note">
+          <strong>🔒 Security tip:</strong> Never share this code with anyone. RoleMatcherAI will never ask for it via phone, email, or chat.
+        </div>
+        
+        <hr class="divider">
+        
+        <p class="footer">
+          If you didn't request this, please ignore this email or 
+          <a href="mailto:support@rolematcher.ai">contact support</a>.<br>
+          — The RoleMatcherAI Team
+        </p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>"""
+
+    sent = _send_email_smtp(email, subject, body_text, body_html)
+
+    # Always log to terminal as fallback/backup
     line = "=" * 56
     print(
-        f"\n{line}\n  RoleMatcherAi {label} code for {email}\n\n      {code}\n\n"
-        f"  (valid for {_OTP_TTL_MINUTES} minutes)\n{line}\n",
+        f"\n{line}\n  RoleMatcherAI {label} code for {email}\n\n      {code}\n\n"
+        f"  (valid for {_OTP_TTL_MINUTES} minutes)\n  SMTP sent: {sent}\n{line}\n",
         flush=True,
     )
 

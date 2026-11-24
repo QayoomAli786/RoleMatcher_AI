@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 10
     allowed_upload_extensions: list[str] = [".pdf", ".docx", ".txt"]
 
+    # ── SMTP Email ───────────────────────────────────────────────────────────
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_from_name: str = "RoleMatcherAI"
+    smtp_use_tls: bool = True
+
     @property
     def max_upload_size_bytes(self) -> int:
         return self.max_upload_size_mb * 1024 * 1024
