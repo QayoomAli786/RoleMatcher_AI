@@ -24,7 +24,7 @@ from backend.main import app  # noqa: E402
 
 
 def _code(email: str, purpose: str = "signup") -> str | None:
-    """Read the OTP that would normally be emailed (here it prints to the terminal)."""
+    """Read the emailed OTP from the throwaway database (no terminal fallback)."""
     conn = sqlite3.connect(str(_db))
     try:
         row = conn.execute(

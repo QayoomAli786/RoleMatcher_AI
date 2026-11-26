@@ -150,11 +150,24 @@ async function runAuth(btn, work) {
 
 async function submitAuth(url, payload, btn) {
     await runAuth(btn, async () => {
-        const body = await postJson(url, payload);
-        setAuth(body.token, body.user);
-        hideAuthOverlay();
-        showToast(`Welcome${body.user?.name ? ', ' + body.user.name : ''}!`, 'success');
-        afterLogin();
+        try {
+            const body = await postJson(url, payload);
+            setAuth(body.token, body.user);
+            hideAuthOverlay();
+            showToast(`Welcome${body.user?.name ? ', ' + body.user.name : ''}!`, 'success');
+            afterLogin();
+        } catch (err) {
+            // A failed sign-in normally means the email is not registered or the
+            // password is wrong. Offer sign up instead of just showing an error.
+            if (url.endsWith('/auth/login') && /invalid email or password/i.test(err.message)) {
+                const signupEmail = document.getElementById('signup-email');
+                if (signupEmail && payload.email) signupEmail.value = payload.email;
+                showAuthForm('signup');
+                showToast('No account found for this email — create one to sign in', 'error');
+                return;
+            }
+            throw err;
+        }
     });
 }
 
@@ -274,7 +287,7 @@ function initAuth() {
         submitAuth(`${API_BASE}/auth/login`, { email, password }, document.getElementById('login-submit'));
     });
 
-    // Sign up — the backend prints a verification code to the terminal
+    // Sign up — the backend emails a verification code
     initSignupValidation();
     document.getElementById('auth-signup-form').addEventListener('submit', (e) => {
         e.preventDefault();
@@ -302,7 +315,7 @@ function initAuth() {
         runAuth(document.getElementById('signup-submit'), async () => {
             const body = await postJson(`${API_BASE}/auth/signup`, { name, email, password });
             pendingOtpEmail = body.email || email;
-            showToast(`Verification code sent to ${pendingOtpEmail} — check the server terminal`, 'success');
+            showToast(`Verification code sent to ${pendingOtpEmail} — check your email`, 'success');
             showAuthForm('otp');
             document.getElementById('auth-caption').textContent = `Enter the 6-digit code sent to ${pendingOtpEmail}.`;
         });
@@ -322,7 +335,7 @@ function initAuth() {
         });
     });
 
-    // Forgot password — prints a reset code to the terminal
+    // Forgot password — emails a reset code
     document.getElementById('auth-forgot-form').addEventListener('submit', (e) => {
         e.preventDefault();
         const email = document.getElementById('forgot-email').value.trim();
@@ -330,7 +343,7 @@ function initAuth() {
         runAuth(document.getElementById('forgot-submit'), async () => {
             pendingOtpEmail = email;
             await postJson(`${API_BASE}/auth/forgot-password`, { email });
-            showToast(`If ${pendingOtpEmail} is registered, a reset code was sent — check the terminal`, 'success');
+            showToast(`If ${pendingOtpEmail} is registered, a reset code was sent — check your email`, 'success');
             showAuthForm('reset');
             document.getElementById('auth-caption').textContent = `Enter the reset code sent to ${pendingOtpEmail}.`;
         });
@@ -354,7 +367,7 @@ function initAuth() {
     // Resend / back links between the steps
     const resend = (btn, purpose) => runAuth(btn, async () => {
         await postJson(`${API_BASE}/auth/resend-otp`, { email: pendingOtpEmail, purpose });
-        showToast(`New code sent to ${pendingOtpEmail} — check the server terminal`, 'success');
+        showToast(`New code sent to ${pendingOtpEmail} — check your email`, 'success');
     });
     document.getElementById('otp-resend').addEventListener('click', (e) => resend(e.currentTarget, 'signup'));
     document.getElementById('reset-resend').addEventListener('click', (e) => resend(e.currentTarget, 'reset'));

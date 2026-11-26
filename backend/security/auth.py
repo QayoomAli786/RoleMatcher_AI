@@ -15,8 +15,10 @@ import smtplib
 import ssl
 import uuid
 from datetime import datetime, timedelta, timezone
+from email.header import Header as EmailHeader
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr
 
 from fastapi import Header, HTTPException, status
 
@@ -90,8 +92,14 @@ def _send_email_smtp(to_email: str, subject: str, body_text: str, body_html: str
 
     try:
         msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = f"{settings.smtp_from_name} <{settings.smtp_from_email or settings.smtp_user}>"
+        # Header values must be RFC 2047 encoded — subject and display name
+        # contain non-ASCII characters (em dash / branding) that plain str
+        # assignment would reject with an ASCII encoding error.
+        msg["Subject"] = str(EmailHeader(subject, "utf-8"))
+        msg["From"] = formataddr(
+            (settings.smtp_from_name, settings.smtp_from_email or settings.smtp_user),
+            charset="utf-8",
+        )
         msg["To"] = to_email
 
         part_text = MIMEText(body_text, "plain", "utf-8")
@@ -124,7 +132,7 @@ def _send_email_smtp(to_email: str, subject: str, body_text: str, body_html: str
 
 
 def _deliver_code(email: str, purpose: str, code: str) -> None:
-    """Send the verification code via SMTP. Falls back to terminal print if SMTP not configured."""
+    """Send the verification code by email. Codes are never printed to logs/terminal."""
     label = "Sign up verification" if purpose == _SIGNUP else "Password reset"
     subject = f"RoleMatcherAI — {label} code"
     body_text = (
@@ -212,14 +220,10 @@ def _deliver_code(email: str, purpose: str, code: str) -> None:
 </html>"""
 
     sent = _send_email_smtp(email, subject, body_text, body_html)
-
-    # Always log to terminal as fallback/backup
-    line = "=" * 56
-    print(
-        f"\n{line}\n  RoleMatcherAI {label} code for {email}\n\n      {code}\n\n"
-        f"  (valid for {_OTP_TTL_MINUTES} minutes)\n  SMTP sent: {sent}\n{line}\n",
-        flush=True,
-    )
+    if not sent:
+        # Do not log the code itself — a verification code must only reach
+        # the address it was sent to.
+        logger.error("Could not deliver %s code to %s — check SMTP settings", label.lower(), email)
 
 
 def _store_code(email: str, purpose: str, payload: dict) -> None:
@@ -238,7 +242,7 @@ def _consume_code(email: str, purpose: str, code: str) -> dict:
         raise ValueError("No pending code — start again or tap 'Resend code'")
     if not _same_code(row["code"], code):
         logger.info("Wrong %s code for %s", purpose, email)
-        raise ValueError("Incorrect code — check the server terminal, or tap 'Resend code'")
+        raise ValueError("Incorrect code — check your email, or tap 'Resend code'")
     if datetime.fromisoformat(row["expires_at"]) < datetime.now(timezone.utc):
         db.delete_otp(email, purpose)
         logger.info("Expired %s code for %s", purpose, email)
@@ -256,7 +260,7 @@ def _same_code(stored: str, entered: str) -> bool:
         return False
     if entered == stored:
         return True
-    # A user may drop a leading zero the terminal printed (e.g. 040613 → 40613).
+    # A user may drop a leading zero from the emailed code (e.g. 040613 → 40613).
     return entered.isdigit() and stored.isdigit() and int(entered) == int(stored)
 
 

@@ -54,7 +54,7 @@ def _public(user: UserProfile) -> dict:
 
 @router.post("/signup")
 async def signup(body: _SignupBody):
-    """Start sign up — sends a verification code (printed in the terminal)."""
+    """Start sign up — sends a verification code by email."""
     try:
         email = auth_service.start_signup(body.email, body.password, body.name)
     except ValueError as exc:

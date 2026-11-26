@@ -361,11 +361,11 @@ Verification emails (sign-up, password reset) are sent via SMTP. Configure in yo
 | `CC_SMTP_PASSWORD` | SMTP password or app password | `"your-app-password"` |
 | `CC_SMTP_FROM_EMAIL` | Sender email (defaults to SMTP user) | `noreply@yourdomain.com` |
 | `CC_SMTP_FROM_NAME` | Sender display name | `RoleMatcherAI` |
-| `CC_SMTP_USE_TLS` | `true` for STARTTLS (port 587), `false` for implicit SSL (port 465) | `false` |
+| `CC_SMTP_USE_TLS` | `true` for STARTTLS (port 587); ignored on port 465 (implicit SSL) | `true` |
 
 **Gmail notes:** Use an **App Password** (not your regular password). Enable 2FA first, then generate an App Password in Google Account → Security → App Passwords. Port 465 (SSL) is recommended over 587 (STARTTLS) to avoid firewall issues.
 
-If SMTP is not configured, verification codes are printed to the server terminal (development fallback).
+If SMTP is not configured, verification codes are **not** delivered — configure SMTP before using sign-up or password reset. Codes are never printed to the server terminal.
 
 **How it is used:** every API call attaches `X-API-Key` and `X-Model` headers from
 `localStorage`, so the backend routes each request to your chosen provider/model. Saved
@@ -449,7 +449,7 @@ returns an empty list. ATS analysis in the UI runs through `POST /api/jobs/{id}/
 which invokes the same `ats_graph` pipeline.
 
 ### Security (`security/`)
-- **Auth** — Email/password accounts with SQLite-backed session tokens. Sign-up requires a Gmail address and a strong password (8+ chars, upper, lower, digit, symbol). Verification codes are sent via **SMTP** (configurable in `.env`) with a styled HTML email; falls back to server-terminal print if SMTP is not configured.
+- **Auth** — Email/password accounts with SQLite-backed session tokens. Sign-up requires a Gmail address and a strong password (8+ chars, upper, lower, digit, symbol). Verification codes are sent via **SMTP** (configurable in `.env`) with a styled HTML email; no terminal fallback — SMTP must be configured.
 - **Rate limiting** — 60 requests/minute/IP by default (Redis when `CC_REDIS_URL` is set, in-memory fallback otherwise). Rejections return `429` with `X-RateLimit-*` headers.
 - **Sanitization** — user-supplied text is sanitized before it reaches templates/prompts.
 - **File upload validation** — magic-byte checks for PDF/DOCX/TXT; size limit via `CC_MAX_UPLOAD_SIZE_MB`.
@@ -478,7 +478,7 @@ All endpoints are prefixed with `/api`. Optional headers on every request:
 | GET | `/api/health` | Service health and version. |
 | GET | `/api/admin/stats` | Runtime statistics (requests, traces). |
 | POST | `/api/admin/refresh-jobs` | Force-refresh the job cache. |
-| POST | `/api/auth/signup` | Start sign-up — sends verification code via SMTP (or terminal fallback). |
+| POST | `/api/auth/signup` | Start sign-up — sends verification code via SMTP. |
 | POST | `/api/auth/verify-otp` | Complete sign-up — verify code and create account. |
 | POST | `/api/auth/resend-otp` | Resend verification/reset code. |
 | POST | `/api/auth/forgot-password` | Request password reset code. |
@@ -540,8 +540,8 @@ All endpoints are prefixed with `/api`. Optional headers on every request:
 | `429` responses | Hit the 60 req/min/IP rate limit — wait a minute. |
 | Plan/interview generation fails | Usually an LLM error: verify the API key is valid for the selected provider, or switch models in Settings. |
 | "Please enter a valid profession name" | The career target field must look like a real job title (letters only, ≥2 characters, not one repeated character). |
-| Verification email not received | Check SMTP settings in `.env`. For Gmail, use port 465 with `CC_SMTP_USE_TLS=false` and an App Password. If SMTP fails, codes print to the server terminal (look for "RoleMatcherAI Sign up verification code"). |
-| SMTP timeout (WinError 10060) | Firewall/antivirus/ISP blocking outbound SMTP. Test with `Test-NetConnection smtp.gmail.com -Port 465` in PowerShell. Allow Python through Windows Firewall or use terminal fallback. |
+| Verification email not received | Check SMTP settings in `.env`. For Gmail, use port 465 with an App Password (`CC_SMTP_USE_TLS` is ignored on 465). Codes are never printed to the terminal — fix SMTP, then request a new code. |
+| SMTP timeout (WinError 10060) | Firewall/antivirus/ISP blocking outbound SMTP. Test with `Test-NetConnection smtp.gmail.com -Port 465` in PowerShell. Allow Python through Windows Firewall, or use a provider that permits SMTP. |
 | Background animation feels heavy | The workflow canvas and blobs are decorative; they can be removed without affecting functionality. |
 
 ---
