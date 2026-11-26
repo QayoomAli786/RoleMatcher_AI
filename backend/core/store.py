@@ -36,10 +36,20 @@ def save_resume(resume: _Resume) -> None:
 
 
 def get_resume(rid: uuid.UUID) -> _Resume | None:
-    return _resumes.get(rid)
+    resume = _resumes.get(rid)
+    if resume is None:
+        # Another serverless instance may have created it — check the database.
+        record = db.get_object("resume", rid)
+        if record:
+            resume = _row_to_resume(record)
+            _resumes[rid] = resume
+    return resume
 
 
 def list_resumes(user_id: uuid.UUID) -> list[_Resume]:
+    for record in db.list_objects("resume", user_id):
+        resume = _row_to_resume(record)
+        _resumes[resume.id] = resume
     return sorted(
         [r for r in _resumes.values() if r.user_id == user_id],
         key=lambda r: r.created_at,
@@ -48,8 +58,9 @@ def list_resumes(user_id: uuid.UUID) -> list[_Resume]:
 
 
 def delete_resume(rid: uuid.UUID) -> bool:
-    db.delete_object("resume", rid)
-    return _resumes.pop(rid, None) is not None
+    deleted = db.delete_object("resume", rid)
+    cached = _resumes.pop(rid, None) is not None
+    return deleted or cached
 
 
 # ── Application Store ─────────────────────────────────────────────────────────
@@ -73,16 +84,26 @@ def save_application(app: _Application) -> None:
 
 
 def get_application(aid: uuid.UUID) -> _Application | None:
-    return _applications.get(aid)
+    application = _applications.get(aid)
+    if application is None:
+        record = db.get_object("application", aid)
+        if record:
+            application = _row_to_application(record)
+            _applications[aid] = application
+    return application
 
 
 def list_applications(user_id: uuid.UUID) -> list[_Application]:
+    for record in db.list_objects("application", user_id):
+        application = _row_to_application(record)
+        _applications[application.id] = application
     return [a for a in _applications.values() if a.user_id == user_id]
 
 
 def delete_application(aid: uuid.UUID) -> bool:
-    db.delete_object("application", aid)
-    return _applications.pop(aid, None) is not None
+    deleted = db.delete_object("application", aid)
+    cached = _applications.pop(aid, None) is not None
+    return deleted or cached
 
 
 # ── Conversation Store ────────────────────────────────────────────────────────
@@ -104,10 +125,19 @@ def save_conversation(conv: _Conversation) -> None:
 
 
 def get_conversation(cid: uuid.UUID) -> _Conversation | None:
-    return _conversations.get(cid)
+    conversation = _conversations.get(cid)
+    if conversation is None:
+        record = db.get_object("conversation", cid)
+        if record:
+            conversation = _row_to_conversation(record)
+            _conversations[cid] = conversation
+    return conversation
 
 
 def list_conversations(user_id: uuid.UUID) -> list[_Conversation]:
+    for record in db.list_objects("conversation", user_id):
+        conversation = _row_to_conversation(record)
+        _conversations[conversation.id] = conversation
     return sorted(
         [c for c in _conversations.values() if c.user_id == user_id],
         key=lambda c: c.id,
@@ -116,8 +146,9 @@ def list_conversations(user_id: uuid.UUID) -> list[_Conversation]:
 
 
 def delete_conversation(cid: uuid.UUID) -> bool:
-    db.delete_object("conversation", cid)
-    return _conversations.pop(cid, None) is not None
+    deleted = db.delete_object("conversation", cid)
+    cached = _conversations.pop(cid, None) is not None
+    return deleted or cached
 
 
 # ── Generic Stores for Other Features ─────────────────────────────────────────
@@ -154,10 +185,25 @@ def store_generic(store: dict, key: uuid.UUID, value: dict) -> None:
 
 
 def get_generic(store: dict, key: uuid.UUID) -> dict | None:
-    return store.get(key)
+    result = store.get(key)
+    if result is None:
+        kind = getattr(store, "kind", None)
+        if kind:
+            record = db.get_object(kind, key)
+            if record:
+                result = record["data"]
+                store[key] = result
+    return result
 
 
 def list_generic(store: dict, user_id: uuid.UUID) -> list[dict]:
+    kind = getattr(store, "kind", None)
+    if kind:
+        for record in db.list_objects(kind, user_id):
+            try:
+                store[uuid.UUID(record["id"])] = record["data"]
+            except ValueError:
+                continue
     # user_id may be a UUID or a str (depends on whether the entry was loaded
     # from SQLite after a restart), hence the str() normalization.
     return [v for v in store.values() if str(v.get("user_id")) == str(user_id)]
@@ -165,6 +211,13 @@ def list_generic(store: dict, user_id: uuid.UUID) -> list[dict]:
 
 def list_all_generic(store: dict) -> list[dict]:
     """Return all entries in a generic store (for shared/public data)."""
+    kind = getattr(store, "kind", None)
+    if kind:
+        for record in db.list_objects(kind):
+            try:
+                store[uuid.UUID(record["id"])] = record["data"]
+            except ValueError:
+                continue
     return list(store.values())
 
 
@@ -215,8 +268,14 @@ def _row_to_conversation(rec: dict) -> _Conversation:
 
 
 def init_store() -> None:
-    """Create the schema and load persisted rows into the in-memory caches."""
+    """Create the schema and warm the in-memory caches.
+
+    With Postgres the caches are hydrated on demand by the get/list helpers,
+    so a cold start only needs the schema check — not a full table scan.
+    """
     db.init_db()
+    if db.uses_postgres():
+        return
 
     for rec in db.list_objects("resume"):
         r = _row_to_resume(rec)

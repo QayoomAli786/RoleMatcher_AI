@@ -237,6 +237,7 @@ The application starts without a `.env` file. All variables are optional and use
 | `CC_GEMINI_API_KEY`, `CC_OPENAI_API_KEY`, `CC_GROQ_API_KEY`, `CC_DEEPSEEK_API_KEY`, `CC_QWEN_API_KEY` | Optional server-side LLM keys; users can always supply their own in Settings |
 | `CC_FAST_MODEL` / `CC_STRONG_MODEL` | Model routing for fast and strong tiers |
 | `CC_REDIS_URL` | Redis-backed rate limiting; falls back to an in-memory limiter when unset or unreachable |
+| `DATABASE_URL` / `CC_DATABASE_URL` | Neon/Postgres connection string; when set, Postgres is used instead of SQLite |
 | `CC_DEBUG` | Debug logging (default: `false`) |
 
 ### 3. Run
@@ -263,6 +264,37 @@ python -m backend.tests.test_career_input
 python -m backend.tests.test_career_tool_loop
 python -m backend.tests.test_docx_builder
 ```
+
+## Deploy to Vercel
+
+The FastAPI app serves both the frontend and the `/api` backend from a single
+Vercel Function, so one project is enough:
+
+1. Push the repository to GitHub.
+2. In Vercel, **Add New → Project** and import that repository.
+3. Leave the build settings as detected (Framework: **FastAPI**, Python **3.12**).
+4. Click **Deploy**. Every later `git push` triggers a new deployment.
+
+`vercel.json` sets the function timeout and keeps test/data files out of the
+bundle. `main.py` at the repo root is the entrypoint that exports the FastAPI
+`app`.
+
+### Neon Postgres on Vercel (recommended)
+
+Vercel Functions have an ephemeral filesystem, so SQLite is only a local-dev
+fallback there. To persist users, sessions and app data:
+
+1. Create a Neon database and copy its **pooled** connection string (the host
+   contains `-pooler`, e.g. `postgresql://user:pass@ep-xxx-pooler.us-east-2.aws.neon.tech/db?sslmode=require`).
+2. In Vercel → **Project Settings → Environment Variables**, add
+   `DATABASE_URL` (or `CC_DATABASE_URL`) with that value. Add your optional
+   `CC_GEMINI_API_KEY` and other LLM keys there too.
+3. Redeploy. The required tables are created automatically on the first request.
+
+When `DATABASE_URL` is set the app uses Postgres everywhere; without it, local
+runs keep using `data/rolematcher.db`. The pooled host matters on serverless —
+it avoids exhausting Neon's direct connection limit. Users can always supply
+their own LLM key in the app's **Settings** panel.
 
 ## API Overview
 

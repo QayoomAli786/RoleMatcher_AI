@@ -1,8 +1,15 @@
 """Centralized configuration for CareerCopilot AI using pydantic-settings."""
 
+import os
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Vercel Functions have a read-only filesystem except for /tmp. Keep local
+# development on the repo-level SQLite file, but use /tmp on Vercel so the app
+# can create/write its database instead of crashing on startup.
+_ON_VERCEL = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"))
 
 
 class Settings(BaseSettings):
@@ -22,10 +29,19 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # ── Redis (optional — used by the rate limiter when reachable) ──────────
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = "" if _ON_VERCEL else "redis://localhost:6379/0"
 
-    # ── SQLite (relative paths resolve to the repo root) ────────────────────
-    sqlite_path: str = "data/rolematcher.db"
+    # ── Database ──────────────────────────────────────────────────────────────
+    # Neon / Postgres. Accepts both the app-style CC_DATABASE_URL and the
+    # conventional DATABASE_URL used by Neon's dashboard. When set, it takes
+    # precedence over SQLite (including on Vercel, where SQLite is ephemeral).
+    database_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("CC_DATABASE_URL", "DATABASE_URL"),
+    )
+
+    # SQLite fallback for local development (relative paths resolve to the repo root).
+    sqlite_path: str = "/tmp/rolematcher.db" if _ON_VERCEL else "data/rolematcher.db"
 
     # ── LLM Providers ───────────────────────────────────────────────────────
     gemini_api_key: str = ""
