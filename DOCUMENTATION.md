@@ -363,7 +363,7 @@ Verification emails (sign-up, password reset) are sent via SMTP. Configure in yo
 | `CC_SMTP_FROM_NAME` | Sender display name | `RoleMatcherAI` |
 | `CC_SMTP_USE_TLS` | `true` for STARTTLS (port 587); ignored on port 465 (implicit SSL) | `true` |
 
-**Gmail notes:** Use an **App Password** (not your regular password). Enable 2FA first, then generate an App Password in Google Account → Security → App Passwords. Port 465 (SSL) is recommended over 587 (STARTTLS) to avoid firewall issues.
+**Gmail notes:** Use an **App Password** (not your regular password). Enable 2FA first, then generate an App Password in Google Account → Security → App Passwords. Copy the 16 characters **without the spaces** — Gmail displays them in four groups, but the groups are not part of the password. Port 465 (SSL) is recommended over 587 (STARTTLS) to avoid firewall issues.
 
 If SMTP is not configured, verification codes are **not** delivered — configure SMTP before using sign-up or password reset. Codes are never printed to the server terminal.
 
